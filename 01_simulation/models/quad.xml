@@ -1,0 +1,116 @@
+<mujoco model="quad">
+  <!--
+    X-configuration quadrotor. Parameters and rotor numbering/spin/mixer
+    match docs/TDD.md section 2 exactly - keep this file and that doc in
+    sync if either changes.
+
+    Frame convention: ENU world / FLU body (docs/TDD.md section 1).
+    Body +X = forward, +Y = left, +Z = up. Identity quaternion = level
+    hover. Free joint qvel angular part is body-frame angular velocity -
+    matches this project's omega definition directly, no conversion.
+
+    Each rotor is a single site-transmitted motor actuator whose gear
+    vector applies both the thrust force (along body +Z at the rotor
+    site) and the reaction yaw torque (about the same axis) in one
+    actuator - MuJoCo computes the roll/pitch moment automatically from
+    the site's offset from the body COM (r x F), so this implements the
+    mixer matrix in TDD.md section 2 without any separate mixing code.
+  -->
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" integrator="RK4" gravity="0 0 -9.81"/>
+
+  <default>
+    <default class="quad">
+      <geom contype="0" conaffinity="0" group="1"/>
+    </default>
+  </default>
+
+  <!-- Cosmetic materials only (reflectance/shininess/rgba) - zero mass or
+       collision effect, so identification data and physics are untouched
+       by any change in this asset block. Body is now a lighter, glossy
+       carbon-gray instead of near-black (rgba 0.2 0.2 0.2), which was
+       nearly invisible against a dark scene. -->
+  <asset>
+    <material name="body_mat" rgba="0.55 0.57 0.6 1" specular="0.6" shininess="0.5" reflectance="0.15"/>
+    <material name="arm_mat" rgba="0.35 0.35 0.38 1" specular="0.4" shininess="0.3"/>
+    <material name="nose_mat" rgba="1.0 0.55 0.0 1" specular="0.5" shininess="0.4"/>
+  </asset>
+
+  <worldbody>
+    <body name="quad" pos="0 0 1" childclass="quad">
+      <freejoint name="root"/>
+      <!-- Explicit inertial overrides any geom-based inertia estimate -
+           this is the authoritative mass/inertia from TDD.md section 2. -->
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.003375 0.003375 0.006750"/>
+
+      <!-- Central hub: rounded (ellipsoid) instead of a flat box, reads
+           more like a drone fuselage than a wireframe placeholder. -->
+      <geom name="body" type="ellipsoid" size="0.055 0.045 0.022" material="body_mat"/>
+
+      <!-- Forward-direction marker (body +X, per this file's own frame
+           convention above) - a small bright wedge so attitude/heading is
+           visually legible at a glance. Without this, the body is
+           left-right and front-back symmetric and you cannot tell which
+           way the drone is actually facing from the render alone, which
+           matters when eyeballing whether a "forward" command produced a
+           forward-pointing tilt or not. Purely cosmetic geom (group 1,
+           no collision), zero effect on mass/inertia/identification. -->
+      <geom name="nose" type="box" pos="0.06 0 0.005" size="0.012 0.012 0.008" material="nose_mat"/>
+
+      <!-- Arms: body center to each rotor position, purely visual. -->
+      <geom name="arm1" type="capsule" fromto="0 0 0  0.106066  0.106066 0" size="0.009" material="arm_mat"/>
+      <geom name="arm2" type="capsule" fromto="0 0 0 -0.106066 -0.106066 0" size="0.009" material="arm_mat"/>
+      <geom name="arm3" type="capsule" fromto="0 0 0  0.106066 -0.106066 0" size="0.009" material="arm_mat"/>
+      <geom name="arm4" type="capsule" fromto="0 0 0 -0.106066  0.106066 0" size="0.009" material="arm_mat"/>
+
+      <!-- Rotor sites: X config, positions/spin per TDD.md section 2 table.
+           Colors are FUNCTIONAL, not decorative: red = CW spin pair
+           (rotor1/2, +yaw reaction torque), blue = CCW spin pair
+           (rotor3/4, -yaw reaction torque), matching mixer.py's gear
+           signs exactly - do not "fix" these to match a color scheme. -->
+      <site name="rotor1" pos=" 0.106066  0.106066 0" size="0.02" rgba="0.9 0.2 0.2 1"/>
+      <site name="rotor2" pos="-0.106066 -0.106066 0" size="0.02" rgba="0.9 0.2 0.2 1"/>
+      <site name="rotor3" pos=" 0.106066 -0.106066 0" size="0.02" rgba="0.2 0.2 0.9 1"/>
+      <site name="rotor4" pos="-0.106066  0.106066 0" size="0.02" rgba="0.2 0.2 0.9 1"/>
+
+      <!-- Rotor hubs (small) + prop discs (larger, translucent) for a more
+           readable silhouette than a single flat disc per rotor. -->
+      <geom name="hub1" type="cylinder" pos=" 0.106066  0.106066 0.008" size="0.012 0.006" rgba="0.9 0.2 0.2 1"/>
+      <geom name="hub2" type="cylinder" pos="-0.106066 -0.106066 0.008" size="0.012 0.006" rgba="0.9 0.2 0.2 1"/>
+      <geom name="hub3" type="cylinder" pos=" 0.106066 -0.106066 0.008" size="0.012 0.006" rgba="0.2 0.2 0.9 1"/>
+      <geom name="hub4" type="cylinder" pos="-0.106066  0.106066 0.008" size="0.012 0.006" rgba="0.2 0.2 0.9 1"/>
+      <geom name="prop1" type="cylinder" pos=" 0.106066  0.106066 0.012" size="0.06 0.002" rgba="0.9 0.2 0.2 0.45"/>
+      <geom name="prop2" type="cylinder" pos="-0.106066 -0.106066 0.012" size="0.06 0.002" rgba="0.9 0.2 0.2 0.45"/>
+      <geom name="prop3" type="cylinder" pos=" 0.106066 -0.106066 0.012" size="0.06 0.002" rgba="0.2 0.2 0.9 0.45"/>
+      <geom name="prop4" type="cylinder" pos="-0.106066  0.106066 0.012" size="0.06 0.002" rgba="0.2 0.2 0.9 0.45"/>
+
+      <site name="imu" pos="0 0 0" size="0.005"/>
+
+      <!-- Chase camera, visualization-only (a camera has zero mass/DOF and
+           cannot affect physics or identification data, so this is safe to
+           keep in the authoritative quad.xml rather than duplicating the
+           whole body in scene.xml just to attach a camera to it). Used by
+           render_offscreen.py and demo.py so the drone actually fills the
+           frame instead of being a speck against a default far-away view. -->
+      <camera name="chase" pos="-1.4 -1.4 0.7" xyaxes="0.707 -0.707 0  0.24 0.24 0.94" mode="trackcom"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- gear = [fx fy fz tx ty tz] in the site's local frame. fz=1 means
+         ctrl (Newtons) maps directly to thrust force along body +Z.
+         tz = +/- k_m * ctrl implements the reaction-torque term of the
+         yaw mixer row: tau_z = k_m * (u1 + u2 - u3 - u4). -->
+    <motor name="thrust1" site="rotor1" gear="0 0 1 0 0  0.02" ctrlrange="0 6.0" forcerange="0 6.0"/>
+    <motor name="thrust2" site="rotor2" gear="0 0 1 0 0  0.02" ctrlrange="0 6.0" forcerange="0 6.0"/>
+    <motor name="thrust3" site="rotor3" gear="0 0 1 0 0 -0.02" ctrlrange="0 6.0" forcerange="0 6.0"/>
+    <motor name="thrust4" site="rotor4" gear="0 0 1 0 0 -0.02" ctrlrange="0 6.0" forcerange="0 6.0"/>
+  </actuator>
+
+  <sensor>
+    <framepos name="position" objtype="site" objname="imu"/>
+    <framequat name="attitude" objtype="site" objname="imu"/>
+    <velocimeter name="linear_velocity" site="imu"/>
+    <gyro name="angular_velocity" site="imu"/>
+  </sensor>
+</mujoco>

@@ -1,0 +1,7 @@
+scenario,sindy_settling_s,mujoco_settling_s,sindy_sse_deg,mujoco_sse_deg,sindy_settled,mujoco_settled,sindy_saturated,mujoco_saturated
+roll_step_15deg,0.5660000000000001,0.5640000000000001,2.2398791018556064e-05,1.7429117548506015e-07,True,True,True,True
+pitch_step_15deg,0.5660000000000001,0.5660000000000001,2.2588126678898343e-05,1.2887843946242582e-06,True,True,True,True
+yaw_step_15deg,0.792,0.79,4.494865308384835e-05,2.9066204075015183e-05,True,True,True,True
+combined_step_15deg,0.674,0.672,3.371930428835531e-05,1.635842093814209e-05,True,True,True,True
+large_step_60deg,0.864,0.862,2.2387680506842494e-05,3.2228962667154416e-06,True,True,True,True
+ramp_roll_to_30deg,3.154,3.154,2.4171374394065527e-05,5.316459485061578e-06,True,True,False,False

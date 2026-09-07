@@ -1,0 +1,199 @@
+# CLAUDE.md — Project Memory
+
+Read this file at the start of every session in this project.
+
+## One-liner
+
+A voice-controlled quadrotor navigation system — speak a command ("left",
+"right", "forward", "back", "hover", "stop"), it converts to a waypoint, a
+**cascaded controller** flies there: an outer position/trajectory loop
+(standard, known physics) generates the attitude setpoint stream, and an
+inner quaternion controller (built on a **data-driven identified model**,
+not hand-derived textbook physics) tracks it — a live 3D animation shows
+the response. Course: **Data Driven Control of Drones**.
+
+**Architecture decision (2026-08-24):** only the inner attitude loop is
+identified from data. The outer position loop and trajectory planner use
+standard Newtonian physics deliberately — translational dynamics under a
+thrust vector are a simple double integrator with nothing meaningful for
+SINDy/DMDc to discover, so identification effort stays concentrated on the
+attitude (rotational, quaternion-constrained) dynamics, which is where the
+real nonlinearity and the actual graded content of this course live. See
+`docs/PRD.md` §1 and `docs/TDD.md` §7b for the full reasoning.
+
+The identification (SINDy + DMDc) is the graded core of this project. The
+voice UI, position/trajectory cascade, and 3D animation are the demo shell
+around it — not the other way around.
+
+## Prior attempt
+
+`C:\Users\mspb2\Desktop\DRONEPROJECT_AFTERREVIEW 1\` (and its older duplicate
+`drone-sim-gazebo\`) is a previous attempt at this same project. It has a
+`lwstack` package (config, controller, sindy_model.py, dmdc_model.py,
+voice.py, MuJoCo `quad.xml`/`world.xml`) and git history. Per user decision
+(2026-08-24), **this project builds its MuJoCo model fresh — the prior
+model/code is not reused**, precisely because the prior attempt's failure
+mode was a broken/degenerate identified model reaching the controller and
+demo without being caught by a real validation gate. Do not silently borrow
+assumptions from that codebase; if consulting it for ideas, verify everything
+independently against this project's own stage gates.
+
+## Stage status
+
+**Stage A — PASSED 2026-08-24** (user approved via `/ponytail-review` "if everything is correct in Stage A go to Stage B"). MuJoCo model at `01_simulation/models/quad.xml`; mixer verified by `tests/test_mixer.py`; excitation trials in `data/raw/`, split in `data/processed/trial_split.parquet`, gate plots in `data/processed/stage_a_plots/`. Seeds are deterministic (`seed_for_trial`, NOT `hash()`) and cross-process reproducibility is enforced by `tests/test_reproducibility.py`.
+
+**Stage B — gate PASSED 2026-08-24 (user confirmed).**
+- SINDy (full envelope): held-out derivative R² **0.9946**, one-step NRMSE **0.0786**, **44 active terms of 156**.
+- DMDc (near-hover only): held-out derivative R² **0.9926**, one-step NRMSE **0.0825**. Outside its declared regime it degrades to 0.7029 — reported, never used as a pass.
+- Recovered coefficients match known ground-truth physics within ~2–6% (control effectiveness, drag, gyroscopic cross-term, θ̇=ω kinematics), pinned by `tests/test_stage_b_physics.py`.
+- Full suite: 16/16 pass. Run: `.venv\Scripts\python.exe 02_identification\run_stage_b.py`
+
+**Stage C — gate PASSED 2026-08-24 (user confirmed). SELECTED MODEL: SINDy.**
+- Short/long-horizon rollout (11s, full envelope, held-out): 0/7 segments diverged, mean final combined-state error 0.095 (bound 0.5). DMDc near-hover: 0/16 diverged, error 0.0037.
+- Eigenvalues: both models show 3/6 marginal (kinematic-integrator) poles — expected, not a defect, for an uncontrolled rigid body's attitude (no restoring force). Remaining poles genuinely stable: SINDy Re={-2.32,-2.31,-1.16}, DMDc |λ|={0.998,0.995,0.995}.
+- Sparsity ablation: 44 terms selected; R² plateaus above thr=0.2, collapses at thr=1.0 (0.588).
+- Noise ablation: robust to ~1 rad/s injected omega noise; clear degradation knee at 2.0 rad/s (R² 0.94), breakdown by 4.0 (R² −2.1, terms balloon 44→91 absorbing noise).
+- **Head-to-head in DMDc's own near-hover regime** (fair comparison): SINDy NRMSE 0.0789 vs DMDc 0.0825 — SINDy matches DMDc even here, while also being the only model valid across the full 6-command operating envelope.
+- Run: `.venv\Scripts\python.exe 03_validation\run_stage_c.py`. Artifacts in `data/processed/stage_c_plots/`.
+
+**Stage D — gate PASSED 2026-08-24 (user confirmed).**
+- **Inner loop** (`04_control/controller.py`): quaternion P² law, gains *derived* from the SINDy hover-linearization (not hand-tuned) — `gains_from_identified_model()`. Verified on 6 setpoint scenarios (3 single-axis steps, 1 combined-axis, 1 large 60° step, 1 ramp) — all stabilize, settle 0.56–0.86s, SINDy-vs-MuJoCo settling times agree within ~0.3%. Rotor saturation occurs briefly on large steps (expected/benign — response stays monotonic, no oscillation, confirmed by plots).
+- **Outer loop** (`04_control/position_controller.py` + `trajectory.py`): standard PD position control + trapezoidal trajectory planner, **not identified** — by design (see PRD.md §1). Waypoint offset 1.5m world-frame, max velocity/accel 1.0/1.0.
+- **Full cascade** (`run_stage_d_cascade.py`): all 6 voice-command waypoints (forward/back/left/right/hover/stop) settle ~1.88s, final error 0.0044m, SINDy-driven and MuJoCo-driven cascades match to 4 decimal places. Bandwidth separation inner/outer = 2.86×.
+- Run: `.venv\Scripts\python.exe 04_control\run_stage_d_inner.py` then `run_stage_d_cascade.py`. Artifacts in `data/processed/stage_d_plots/`.
+
+**Stage E — in progress (2026-08-24).** Voice interface & live 3D navigation demo. Tasks per ENGINEERING_PLAN.md.
+- **End-to-end pipeline built & validated headlessly:** `05_voice_interface/` — `commands.py` (6-word vocab + world-frame waypoint map + difflib classifier), `voice_input.py` (`VoskSource` mic ASR + `TextSource` fallback), `flight.py` (real-time `FlightController` driving MuJoCo plant **through** the Stage D cascade), `demo.py` (live MuJoCo viewer + telemetry panel), `run_trials.py` (≥20-trial headless runner logging per DATA_MODEL §5).
+- **Headless trial gate run:** N=24 scripted trials → **24/24 success (100%)**, final position error ~0.0044 m (move) / 0.0 m (hover/stop), within 0.15 m tolerance; latency breakdown recorded (classify ~0.1 ms, traj-gen ~0.03 ms, control-dispatch ~0.19 ms, total ~0.32 ms). Log: `data/processed/stage_e_voice_sessions/stage_e_trials_*.parquet`. ASR engine choice (vosk) recorded in `docs/TDD.md` §9.
+- **Offscreen 3D navigation demo produced:** `render_offscreen.py` flies the scripted sequence forward→left→back→right→hover through the cascade and writes `data/processed/stage_e_demo/stage_e_navigation.gif` with a telemetry overlay (no display/mic needed). Verified: drone reaches each waypoint, altitude held ~1.0 m.
+- **Automated tests added:** `tests/test_stage_e.py` — classifier (exact + fuzzy + reject), world-frame waypoint map, and end-to-end headless pipeline (6 trials, all within 0.15 m tolerance). `pytest tests/test_stage_e.py` → **5 passed**.
+- **Gate deliverables complete:** full end-to-end pipeline (VAD→ASR→classify→waypoint→trajectory→outer→inner→MuJoCo) + 24/24 headless success + latency breakdown + offscreen 3D visual. The only unrun piece is the *interactive* mic + on-screen viewer (`demo.py`), which requires a display + microphone; it is written and ready. Final Stage E gate awaiting your confirmation.
+- **Post-review polish pass (2026-09-06)**, addressing every weakness flagged in the harsh-grading review of this stage:
+  - **Frozen model artifact**: `03_validation/run_stage_c.py` now serializes the Stage C-selected, gate-passed SINDy model (coefficients + hover Jacobian) to `data/processed/sindy_fitted_model.npz`. `05_voice_interface/flight.py::FlightController` loads this frozen artifact (`load_frozen_sindy()`) instead of calling `fit_models()` cold on every launch — the runtime controller is now provably the exact model that passed the gates, not a fresh independent refit, and launch is instant instead of re-fitting SINDy every time.
+  - **Live telemetry dashboard**: `05_voice_interface/demo.py` replaced its static text box with a real matplotlib dashboard — three rolling strip charts (attitude error deg, position error m, control effort N) fed by a `collections.deque` buffer pushed every control step (dt=0.002s), redrawn at ~20Hz beside the MuJoCo 3D viewport. Verified headless with `matplotlib.use("Agg")` — see git history for the smoke-test approach.
+  - **Honest voice latency**: `voice_input.py`'s `VoskSource` previously hardcoded `"asr": 0.0` and `"classify": 0.0`/`0.5` — fabricated numbers, not measurements. Now `_audio_callback` times the real `AcceptWaveform`/`Result()` call for `asr`, and `_BaseSource._emit` centrally times the real `classify()` call for every source (also removing a duplicate classify() call that existed in `TextSource`). README carries an explicit caveat that the reported ~0.26ms total latency is measured on the scripted/text path only, not real speech.
+  - **Chained trials**: `run_trials.py::run_chained()` flies forward→left→back→right→hover as ONE continuous flight with no `fc.reset()` between legs — matching what `render_offscreen.py`'s GIF actually shows, unlike the original 24-trial gate which reset to a clean hover before every single trial. Result: 5/5 legs within tolerance, final error 0.0000m, max 0.0044m across the chain. Covered by `tests/test_stage_e.py::test_chained_flight_no_reset_between_legs`.
+  - **Documentation overhaul**: `README.md` and `docs/PRD.md` no longer hardcode a stage-status line (both previously said "Stage A — not started" while the project was on Stage E) — both now point to this file's "Stage status" section as the single source of truth. `README.md` rewritten with a pipeline diagram, a full results table with the exact gated numbers above, embedded plots/GIF, and reproduction commands, all in the first scroll.
+  - Full test suite: 26/26 pass (was 25; added the chained-flight test).
+- **Rendering fix + visual polish (2026-09-06, same day)**: live-testing the demo surfaced two real bugs neither the test suite nor a headless Agg-backend smoke test could catch, since both are about what actually gets drawn on screen, not numeric correctness:
+  - **Black viewport bug**: `flight.py`'s `FlightController` was building its MuJoCo model from `MODEL_PATH` (`quad.xml`) — the physics-only model, with no floor, no skybox, and a near-invisible dark-gray body. A `scene.xml` built specifically for visualization already existed in the repo but nothing loaded it. Fixed by adding `SCENE_PATH` in `sim_driver.py` and switching `flight.py` to load it (`scene.xml` only adds a floor/sky/lights, zero bodies/joints/actuators, so this is physics-identical — confirmed by rerunning the full test suite and comparing rendered-GIF trajectories bit-for-bit before/after). The `render_offscreen.py` GIF embedded in `README.md` was silently rendering solid black frames the whole time this bug was live; caught only by actually opening the image, not by checking console output.
+  - **Tiny/unreadable drone**: with a floor now visible, the drone was still a barely-visible speck under the viewer's default far-away free camera. Added a `trackcom`-mode `chase` camera to `quad.xml` (a camera has zero mass/DOF, so this cannot affect physics) and wired both `render_offscreen.py` and `demo.py` to use it.
+  - **Cosmetic-only model/scene polish**: `quad.xml` body changed from a flat dark box to a lighter glossy ellipsoid hub with an orange forward-direction marker (previously the body was front-back symmetric, making heading unreadable from the render alone) and better rotor-hub/prop-disc geometry; rotor red/blue coloring is left untouched since it encodes actual CW/CCW spin pairing from `mixer.py`, not decoration. `scene.xml` got a two-light setup (angled sun + fill) and four small reference-scale props placed at ±8m (well outside the ±1.5m command envelope), plus toned-down ground reflectance. All changes are geoms/materials/lights/cameras only — no mass, joints, or actuators added anywhere — reconfirmed physics-identical by the full test suite and a bit-for-bit position comparison of the offscreen render before/after.
+  - **A `demo.py` dashboard bug introduced and fixed in the same pass**: an attempted fix for a Tk-window-freeze issue referenced `fig` inside `update_dashboard()` without it being in scope, crashing the live demo with a `NameError` on the very first redraw. Fixed by passing `fig` explicitly into the function signature; caught by relaunching and reading the crash traceback, not by pytest (this function has no headless regression test — worth adding one that calls the exact call signature used by `main()`).
+  - Full test suite re-run after every one of the above changes: 26/26 pass throughout, confirming every fix in this pass was physics-inert as claimed, not just asserted to be.
+- **Stage E — Mission Control (2026-09-07)**: replaced the in-process matplotlib click-button dashboard (`demo.py`) with a browser-based unified controller after it repeatedly failed in the field despite passing every headless test.
+  - **Root cause of the missing buttons** (diagnosed via code audit, not guesswork): `demo.py`'s `build_dashboard()`/`update_dashboard()` gate `fig.show()`/`plt.pause()` behind `if "agg" not in matplotlib.get_backend().lower()`. Backend auto-detection is environment-dependent (a different interpreter without `tkinter`, a stray `matplotlib.use("Agg")` sticky from another script run earlier in the same process — four other stage scripts call it at module level — or console/display inheritance quirks through a launcher), and when it silently resolves to `Agg`, the window with the buttons never draws — zero error, zero warning, process still reports "Responding" on every diagnostic. Combined with the inherent fragility of running two native event loops (GLFW + Tk) in one thread (already the source of an earlier `NameError` freeze-fix regression), the architecture itself was the problem, not a specific bug.
+  - **Fix**: `05_voice_interface/mission_control.py` — a Dash web app served from a background thread, alongside the SAME `mjviewer.launch_passive` MuJoCo window on the main thread (unchanged, still the only 3D view). A browser page cannot silently fail to render the way a backend-dependent Tk figure can. Shared state (`MissionControlBus`, one `threading.Lock`) replaces `fig._pending_command`/`fig._buttons`: buttons and a typed-command box write into it from the Dash thread, the sim loop polls it every iteration exactly like it polled the old Tk button dict — same single `fc.dispatch(cmd)` call site as always, no duplicate control logic. Voice (`VoskSource`) and terminal-typed (`TextSource`) input are unchanged and still feed the same call site via `src.get_command()`.
+  - **Verified over real HTTP, not just in-process**: launched live, confirmed `GET /` returns 200, `GET /_dash-layout` contains all 8 command button ids, and a simulated `POST /_dash-update-component` for the FORWARD button returned `{"cmd-feedback":{"children":"Dispatched FORWARD (button)"}}` AND produced a `[dispatch] forward` line in the sim loop's own log — proving the full browser → Dash callback → bus → sim-loop → `fc.dispatch()` chain works end-to-end over the network layer, not just as an in-process Python call (which is exactly the level of proof the old Tk buttons never got, and exactly the level that would have caught the invisible-window bug earlier).
+  - **Command vocabulary extended 6 → 8**: added `up`/`down` (`05_voice_interface/commands.py`) at a deliberately smaller **0.5m** vertical offset (`VERTICAL_OFFSET_M`) than the lateral 1.5m (`WAYPOINT_OFFSET_M`), since hover altitude is only ~1.0m and the visual floor in `scene.xml` is non-collidable (`contype=0 conaffinity=0`) — a full 1.5m "down" would have sent the drone to z≈-0.5m, visually through the floor. `PositionController`/`PointToPointTrajectory` already operate on arbitrary R³ offsets, so this is a pure vocabulary/waypoint-map addition; `controller.py`'s gains and the rest of the Stage D cascade are untouched.
+  - **Voice classifier bug fixed**: `classify()` returned on the FIRST token to clear the 0.6 difflib cutoff, scanning left-to-right. In "five meters to left" and "finally does to left", the filler word "to" fuzzy-matches "stop" at ratio 0.667 (clears cutoff on shared 't'/'o' characters alone) and got returned before the loop ever reached "left" (a perfect 1.0 match). Fixed by scoring every token and keeping the globally best-scoring match instead of the first one above cutoff — a general fix, not a special case for these two phrases. Pinned as regression tests in `tests/test_stage_e.py::test_classify_global_best_not_first_above_cutoff`.
+  - **Graph/system launchers**: `plot_2d_telemetry.py` and `plot_3d_trajectory.py` (new, standalone) read the most recently logged parquet under `data/processed/stage_e_voice_sessions/` and render offline — reusing the "read parquet → matplotlib → show" pattern already established in `run_stage_c.py`/`run_stage_d_cascade.py`, not new live cross-process streaming. The 3D plot draws simple reference "city bars" at the same corner positions/heights as `scene.xml`'s `ref_block_*` props — an independent analysis artifact, never a re-render of MuJoCo's own scene. A Gallery panel lists every `data/processed/**/*.{png,gif,md,html}` file with click-to-open, served via a Flask route Dash's `app.server` registers directly.
+  - `START_DEMO.bat` option 5 launches Mission Control; options 1-4 (the old `demo.py` dashboard) kept working, unchanged, as a fallback.
+  - New dependency: `dash==4.4.1` (pulls in `flask`/`plotly`; no `flask-socketio` — `dcc.Interval` polling at ~200ms is sufficient for this telemetry rate and avoids the extra dependency/complexity).
+  - Full test suite: 28/28 pass (was 27; added the classifier regression tests and up/down waypoint coverage).
+  - **UI REVERTED same day, per user decision**: after seeing it live, the user asked to remove the Dash web UI specifically ("revert back... the UI part") and go back to running commands directly rather than having windows/servers launched on their behalf. `mission_control.py` deleted, `dash`/`flask`/`plotly` uninstalled and removed from `requirements.txt`, the `START_DEMO.bat`/`run_drone.bat` "Mission Control" menu options removed, `README.md`'s Mission Control section replaced with a plain command list for `plot_2d_telemetry.py`/`plot_3d_trajectory.py`. **Kept** (these aren't "UI," they're correctness fixes independent of it): the `commands.py` classifier fix, the `up`/`down` commands and their tests, and the two standalone plot scripts (run directly via `python <script>.py`, no server involved). The root-cause diagnosis above (matplotlib backend auto-detection silently gating `fig.show()`) is still accurate and worth keeping as project memory even though the Dash-based fix for it was undone — if a future session revisits `demo.py`'s button dashboard, that diagnosis is exactly where the previous debugging left off. While testing the batch-file changes for the original Mission Control addition, also found and fixed a PRE-EXISTING bug in `run_drone.bat` unrelated to Mission Control: an unescaped `&` in an `echo` line (cmd.exe parses `&` as a command separator even inside `echo` text unless escaped `^&`) — this fix survives the revert since it's independent of the removed feature.
+  - **Later same day: "LAUNCH EVERYTHING" batch option added.** `START_DEMO.bat`/`run_drone.bat` option 5 uses `start` to open the live demo, both plot scripts, and the test suite as four independent windows at once — verified live (all four windows confirmed open simultaneously via process inspection). This also fixed the actual root cause of "buttons don't work" complaints in a different way than the (reverted) Dash attempt: a window opened via `start` gets a real console with real stdin, unlike a window launched from an automated background tool call, so typing into it genuinely works. Both plot scripts' figure windows were given explicit `set_window_title()` calls (previously both showed generic "Figure 1", indistinguishable when open together).
+  - **Folder rename for presentation**: `stage_a_sim_excitation/…stage_e_voice_visualization/` renamed to `01_simulation/02_identification/03_validation/04_control/05_voice_interface/` per user request ("stage a stage b... won't be good while presenting"). All path-string references updated across every `.py`/`.bat`/doc file (31 files); confirmed safe beforehand that the folders are never imported as Python packages (only ever used as `sys.path.insert` path strings), so numeric-prefixed names are not a syntax problem. `__pycache__` cleared project-wide after the `sed`-based rename since `sed` had touched the binary `.pyc` files too. Full test suite + a full trial-gate re-run both confirmed byte-identical results post-rename.
+  - **Visualization upgrade vs. a peer benchmark project (2026-09-07)**: user shared a benchmark README and asked for comparable-or-better visualization, specifically 3D. Comparison (via Explore agent, grounded in the actual benchmark file and our actual plotting code): the benchmark has exactly 3 real plots and literally zero 3D anywhere (a 2D pygame map + an AI-generated conceptual diagram is not 3D physics rendering) — we already had two real 3D artifacts (`stage_e_navigation.gif`, MuJoCo offscreen rendering; and `plot_3d_trajectory.py`, a matplotlib 3D flight path) it has none of. One genuine content gap found: no plot anywhere combined raw control input with raw state output in one figure, unlike the benchmark's Plot 1. Closed it and went further:
+    - `03_validation/run_stage_c.py::input_output_data_definition_plot()` (new) — rotor thrusts u1-u4, omega response, omega derivative targets, one representative fit trial, reusing `fitted["full_fit"]` (the exact Savitzky-Golay-smoothed data already used for fitting, not a fresh re-read).
+    - `run_stage_c.py::plot_rollout()` extended from 2 rows (theta only, despite `labels` listing omega too) to 3 rows (theta, omega, error norm) — this wasn't a hidden bug (the title honestly said "theta"), just an incomplete plot given the data was already there.
+    - `run_stage_c.py::plot_rollout_3d_phase()` (new) — a genuinely data-driven 3D visualization the benchmark has nothing like: ground-truth vs SINDy-predicted trajectory through the 3D angular-velocity phase space (omega_x,omega_y,omega_z), reusing the exact rollout arrays already computed (no re-simulation). **First attempt picked the wrong example and had to be fixed**: `plot_examples.setdefault()` grabs whichever held-out segment is discovered first, which turned out to be a single-axis trial (`A_roll_chirp_002`) where 2 of 3 omega axes sit near zero — matplotlib auto-scales each 3D axis independently, so tiny residual noise on a near-zero axis gets visually stretched to fill the same plot height as the large excited axis, making a perfectly good fit (max combined-state error ~0.1, nowhere near the 0.5 divergence bound, confirmed by reading `stage_c_rollout_results.csv` directly) look like a dramatic spiral/divergence. Fixed by adding a separate `combined_axis_examples` dict that specifically tracks a trial with `"combined"` in its trial_id (all 3 axes meaningfully excited) for the 3D plot only, leaving the existing 2D `plot_examples` selection untouched. Re-verified visually after the fix — predicted now closely tracks ground truth through the full 3D loop, an honest and strong result.
+    - `05_voice_interface/plot_3d_trajectory.py` polished: now shows isometric + top-down (bird's-eye) views side by side, overlays up to the last 3 chained flights in different colors instead of only the single most recent, and saves a persistent `data/processed/stage_e_demo/flight_3d_trajectory.png` artifact (previously `plt.show()`-only, no file). Three genuinely distinct demo flights generated (varying lateral + `up`/`down` commands) to make the overlay visually meaningful rather than showing near-identical clustered test artifacts.
+    - `README.md`'s "Visual Evidence" section reorganized to lead with a "3D Visualization" subsection (GIF + trajectory plot + phase portrait) before the 2D identification plots, per the user's explicit "visualization is key" ask.
+    - No changes to `sindy_fit.py`, `dmdc_fit.py`, `controller.py`, or any actual identification/control logic — presentation-layer only, reading already-computed fit/rollout results. Full Stage C re-run after every change: identical numeric results throughout (same NRMSE/R²/eigenvalues/model selection), confirming this was purely additive.
+    - Every new/changed PNG was actually opened and visually inspected before being called done — this project was directly burned once already this session by claiming a GIF was correct without opening it (see the "Rendering fix" entry above); the 3D-phase-plot mis-selection above was caught by that same discipline, not by luck.
+
+### Stage D gotcha worth remembering
+- **`omega_dot` has zero dependence on `theta`** in the fitted SINDy model (verified directly from coefficients) — matches physics (rigid-body dynamics don't depend on absolute attitude, only kinematics do). This let closed-loop simulation use exact quaternion kinematics for attitude propagation and SINDy purely for `omega_dot(omega, u)`, sidestepping the Stage B/C local-coordinate reset machinery entirely — reset margins never matter for control-loop timescales (a few seconds), only for the long open-loop Stage A/C rollouts.
+- **A theoretical "critically damped, no overshoot" design claim did not survive contact with the actual cascade** — the outer loop was designed assuming a pure double-integrator plant; the real cascade (with inner-loop lag and drag) shows mild ~0.07m ringing. Documented honestly rather than silently re-describing the achieved behavior as matching the design intent.
+
+### Stage C gotcha worth remembering
+- **Never treat exact-zero / unit-circle eigenvalues as "unstable" via a strict inequality.** An uncontrolled rigid body's attitude has no restoring force by physical necessity (θ̇=ω), so marginal poles are *expected* in both continuous (Re=0) and discrete (|λ|=1) form — this is textbook, not a red flag. A strict `< 0` / `< 1.0` check flagged SINDy as unstable while DMDc's equally-marginal poles (which came from a noisy least-squares fit, sitting at |λ|=0.999995, not exactly 1.0) passed on a coin-flip of floating-point noise — and briefly flipped the model selection to DMDc for the wrong reason. Fixed with a tolerance (1e-3) chosen to sit between the marginal-pole population and the genuinely-damped one, not tightened to floating-point epsilon.
+- **A noise ablation with no visible effect is not evidence of robustness — check it's testing a range that can actually fail.** The first pass (0–0.1 rad/s, ~1-3% of signal) showed a flat line; a probe found the real degradation knee at 2.0–4.0 rad/s. Widened the tested range accordingly.
+
+### Stage B gotchas worth remembering
+- **Never form (k, k+1) pairs across a `segment_id` boundary.** θ jumps ~2.6 rad at a reference-attitude reset vs ~0.002 rad of real motion; squared, one fake pair outweighs a million real ones. This masqueraded as "SINDy broken" (NRMSE 0.99) when the model was actually fine (0.08).
+- **Single-axis trials are rank-2 in the 6-state**, condition number ~1e48. `pinv` hides this; `pydmd` with `svd_rank=-1` faithfully returns ~1e11 garbage. Cross-check DMDc only on full-rank (combined-axis) segments.
+- **One-step error normalised by state *magnitude* is meaningless** at dt=2ms — a do-nothing model scores well. Normalise by state *change* so the trivial baseline is exactly 1.0.
+- **Don't select sparsity by R² alone** — it always picks the densest model (here 127 terms for +0.0002 R²). Use the parsimony rule, on fit-set validation only.
+
+Update this line every time a stage begins or a gate is passed. Format:
+`Stage <X> — <not started | in progress | gate pending user confirmation | gate PASSED on <date>>`.
+
+## Non-negotiable stage-gate table
+
+| Stage | Content | Gate |
+|---|---|---|
+| A — Simulation & excitation | Full nonlinear 6-DOF rigid-body MuJoCo model (position, velocity, quaternion attitude, angular velocity). Open-loop PRBS/chirp excitation per axis. No closed-loop controller active during data collection. | Response plots show rich oscillation/decay across varied frequency content — not a flat near-zero signal. |
+| B — System identification | Savitzky-Golay (or equivalent) smoothing before any differentiation. Fit SINDy (physically-motivated library, quaternion constraint-handling per TDD.md) and DMDc (regime per TDD.md) on the same excitation dataset. | One-step-ahead prediction error on **held-out trials** (separate excitation runs, never a time-slice of one trajectory) below a stated threshold, for both models, before any open-loop rollout is attempted. |
+| C — Validation & analysis | One-step-ahead → short-horizon (5–10s) open-loop rollout → long-horizon rollout, reporting where divergence begins. Eigenvalue/pole-spectrum analysis, sparsity-vs-error ablation (SINDy), noise-vs-error ablation, SINDy-vs-DMDc head-to-head. | Every plot checked against Stage B's gate first — no plot from a model that failed Stage B. Better-validated model selected to carry forward as "the identified model." |
+| D — Cascade controller: data-driven inner loop + standard outer loop | **Inner loop:** singularity-free quaternion attitude controller (Fresk-style P² law) designed/tuned against the **Stage C-selected identified model**. **Outer loop (standard physics, not identified):** point-to-point trajectory planner + position/velocity PD(I) controller generating the inner loop's attitude+thrust setpoint stream from the 6 voice-command waypoints. | Inner loop: step-response settling time/overshoot/steady-state error within a stated tolerance of ground-truth-driven performance. Outer loop: waypoint position-tracking error within a stated tolerance, cascade stability confirmed (outer bandwidth slower than inner). |
+| E — Voice interface & live 3D navigation demo | VAD → offline ASR → command classifier → fixed waypoint map → trajectory planner → outer loop → Stage D inner loop → live 3D MuJoCo animation + telemetry panel (quaternion state, position, attitude/position error, latency breakdown). | End-to-end "spoken word → correct final position achieved" success rate measured over N trials, reported with latency breakdown. |
+
+**Ask the user before starting Stage B, C, D, or E if the previous stage's
+gate has not been explicitly confirmed passed by the user.**
+
+## Rules (every session)
+
+- Never generate Stage C plots from a model that hasn't passed Stage B's one-step-ahead gate.
+- Never skip straight to a long open-loop rollout without first showing one-step-ahead and short-horizon results.
+- Never mix excitation-data collection with closed-loop mission flight in the same dataset used for identification.
+- Never wire Stage E directly to the ground-truth simulator, bypassing the Stage D cascade (trajectory planner → outer loop → identified-model-based inner loop).
+- Never let SINDy/DMDc identification scope creep into the outer position/trajectory loop — that loop is deliberately standard physics (see `docs/TDD.md` §7b); only the inner attitude loop is identified from data.
+- Never fit SINDy directly on raw quaternion components without the constraint-handling strategy from `TDD.md` applied.
+- Never treat DMDc as valid across the full nonlinear excitation envelope unless the EDMD/Koopman lift declared in `TDD.md` is actually implemented — otherwise restrict its claimed validity to near-hover trim and say so on every plot using it.
+- Never split held-out data by randomly slicing a single continuous trajectory — held-out means separate excitation trials.
+- This project runs in **Windows PowerShell**, not a Unix shell. Use `.venv\Scripts\Activate.ps1`, not `source .venv/bin/activate`. Code uses `pathlib`, never hardcoded `/`-style paths.
+
+## Tech stack (fixed — do not re-decide mid-session)
+
+- Language: Python 3.11+
+- Simulation & 3D: MuJoCo (`mujoco` python bindings)
+- Identification: `pysindy` (SINDy), `pydmd` (DMDc)
+- Speech: `vosk` (small model) or `faster-whisper` — both ship Windows wheels, no compiler needed. Avoid raw `whisper.cpp` (needs a C++/CMake build).
+- Microphone: `sounddevice` (PortAudio wheels ship for Windows) — avoid `pyaudio`.
+- Signal processing: `scipy.signal` (Savitzky-Golay)
+- Data storage: Parquet via `pandas`/`pyarrow`
+- Analysis/plots: `matplotlib`; live web dashboard: `dash` (added 2026-09-07 for Mission Control, see Stage E history)
+- Testing: `pytest`
+
+Final speech/audio library choice is recorded in `docs/TDD.md` so it isn't re-decided mid-session.
+
+## Environment setup
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Record every new dependency in `requirements.txt` as it's added — don't let it drift.
+
+## Key file locations
+
+- `docs/PRD.md` — problem statement, goals/non-goals, success criteria
+- `docs/TDD.md` — technical design: model, state/control definitions, SINDy/DMDc formulation, quaternion-constraint decision, validation protocol, voice pipeline
+- `docs/ENGINEERING_PLAN.md` — ordered task breakdown per stage
+- `docs/DATA_MODEL.md` — logged-data schema, held-out split definition
+- `docs/DESIGN_FLOW.md` — Stage A→E flow diagram and artifact handoffs
+- `01_simulation/` … `05_voice_interface/` — per-stage code
+- `data/raw/`, `data/processed/` — logged excitation/validation runs (gitignore if large)
+- `tests/` — pytest suite
+
+## Conventions decided during setup
+
+- Units: SI throughout (meters, kilograms, seconds, radians, Newtons, Newton-meters).
+- Coordinate frame: **ENU world / FLU body** — identity quaternion = level hover, no NED/FRD flip anywhere. See `docs/TDD.md` §1.
+- Sample rate: **500 Hz** (`dt = 0.002 s`). See `docs/TDD.md` §1.
+- Quaternion convention: **Hamilton, scalar-first** `[w, x, y, z]`, body-to-world rotation. See `docs/TDD.md` §1.
+- MuJoCo model: X-config, 4 rotors, m=1.0 kg, l=0.15 m — full parameter table in `docs/TDD.md` §2.
+
+## Priority order for cuts if time runs short
+
+1. **Cut Stage E complexity first** — e.g. keyword-spotting instead of full ASR, a lighter telemetry panel, fewer voice commands.
+2. Stage D can be simplified (fewer setpoints tested, looser tolerance) before touching B/C.
+3. **Stage B/C rigor is never the thing to cut.** It is the actual graded content for a data-driven-control course — a working voice demo on top of a fake or unvalidated identified model is not a passing project.
+
+## Timeline
+
+TBD — no deadline provided as of 2026-08-24. Update this section once known.

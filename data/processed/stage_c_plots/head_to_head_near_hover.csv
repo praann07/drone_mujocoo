@@ -1,0 +1,3 @@
+model,eval_regime,deriv_r2,step_nrmse
+sindy,near_hover,0.9941329621257632,0.0788621878851799
+dmdc,near_hover,0.9925505331541667,0.08248747107227157
