@@ -36,9 +36,12 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+ROOT = Path(__file__).resolve().parent.parent
+for _p in ("05_voice_interface", "01_simulation/models"):
+    sys.path.insert(0, str(ROOT / _p))
 from flight import DT, FlightController, IDENTITY_Q  # noqa: E402
 from voice_input import TextSource, VoskSource  # noqa: E402
+from city import OBSTACLE_FACE_X  # noqa: E402
 
 # Rolling window length for the strip charts, in seconds of flight time.
 HISTORY_S = 8.0
@@ -141,7 +144,8 @@ def build_dashboard():
     fig._pending_command = pending_command  # noqa: SLF001 (intentional, see above)
 
     button_specs = [("FORWARD", "forward"), ("BACK", "back"), ("LEFT", "left"),
-                    ("RIGHT", "right"), ("HOVER", "hover"), ("STOP", "stop")]
+                    ("RIGHT", "right"), ("UP", "up"), ("DOWN", "down"),
+                    ("HOVER", "hover"), ("STOP", "stop")]
     n = len(button_specs)
     btn_w, gap = 0.145, 0.012
     total_w = n * btn_w + (n - 1) * gap
@@ -197,10 +201,11 @@ def update_dashboard(fig, axes, lines, status_text, hist: TelemetryHistory,
     lat = meta.get("latencies_ms", {}) if meta else {}
     transcript = meta.get("transcript", "") if meta else ""
     status_mode = "TRACKING" if cur_pos_err > 0.01 else "HOVER/STEADY"
+    dist_tower = OBSTACLE_FACE_X - p[0]
 
     status_text.set_text(
         f"┌─ TELEMETRY HUD ── MODE: {status_mode:<12s} ── CMD: {last_cmd.upper():<7s} ── TRANSCRIPT: {transcript!r:<20s}\n"
-        f"│ POS (m): X={p[0]:+5.2f} Y={p[1]:+5.2f} Z={p[2]:+5.2f}  │ ERR: pos={cur_pos_err:.4f}m  att={cur_att_err:5.2f}°\n"
+        f"│ POS (m): X={p[0]:+5.2f} Y={p[1]:+5.2f} Z={p[2]:+5.2f}  │ ERR: pos={cur_pos_err:.4f}m  att={cur_att_err:5.2f}°  │ TOWER: d={dist_tower:+5.2f}m\n"
         f"│ QUAT   : W={q[0]:+5.2f} X={q[1]:+5.2f} Y={q[2]:+5.2f} Z={q[3]:+5.2f}  │ LAT: cls={lat.get('classify', 0):.2f}ms traj={lat.get('trajectory', 0):.2f}ms"
     )
 
@@ -255,7 +260,7 @@ def main():
         print(f"Live demo running. {input_desc.capitalize()} a command OR click a "
               f"button in the dashboard window - BOTH work at the same time, every "
               f"single control step, regardless of --source "
-              f"({', '.join(['forward','back','left','right','hover','stop'])}). "
+              f"({', '.join(['forward','back','left','right','up','down','hover','stop'])}). "
               f"Ctrl-C to quit.", flush=True)
         t_sim = 0.0
         t_start = time.perf_counter()

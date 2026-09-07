@@ -9,3 +9,4 @@ matplotlib==3.11.1
 pytest==9.1.1
 vosk
 sounddevice
+pillow==12.3.0

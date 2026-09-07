@@ -12,12 +12,14 @@ import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-for _p in ("05_voice_interface", "04_control"):
+for _p in ("05_voice_interface", "04_control", "01_simulation", "01_simulation/models"):
     sys.path.insert(0, str(ROOT / _p))
 
 from commands import classify, target_offset, COMMANDS, WAYPOINT_OFFSET_M, VERTICAL_OFFSET_M  # noqa: E402
 from trajectory import POSITION_TOLERANCE_M  # noqa: E402
 from run_trials import run_all, run_chained  # noqa: E402
+from run_preemption import run_preemption  # noqa: E402
+from city import OBSTACLE_FACE_X  # noqa: E402
 
 
 def test_classify_known():
@@ -95,6 +97,34 @@ def test_chained_flight_no_reset_between_legs():
             "of testing compounding error like the GIF demo does")
     # final leg's error is the number that matters for a chained sequence
     assert df["position_error_m"].iloc[-1] <= POSITION_TOLERANCE_M + 0.05
+
+
+def test_command_preemption_mid_flight():
+    """A NEW command during transit must immediately override the old one,
+    not queue behind it. In the city scene the forward path now runs toward
+    a visual obstacle tower (face at OBSTACLE_FACE_X), and the scenario
+    that makes the override visible is: forward at t=0, back re-dispatched
+    at t=0.7s while still in transit. The drone must reverse before ever
+    reaching the forward waypoint (let alone the tower face) and hold the
+    NEW back waypoint."""
+    # Scenario sanity: the tower stands beyond the forward waypoint, so a
+    # drone that obeys only its original forward plan would fly at the
+    # building; preemption is what keeps it clear.
+    assert OBSTACLE_FACE_X > WAYPOINT_OFFSET_M
+
+    s = run_preemption()
+    assert s["success"]
+    assert s["peak_x_m"] < OBSTACLE_FACE_X
+    assert s["peak_x_m"] < WAYPOINT_OFFSET_M          # never reached the waypoint
+    assert s["clearance_to_tower_m"] > 0.0
+    assert s["reversal_latency_s"] is not None
+    assert s["reversal_latency_s"] <= 0.5             # immediate override
+    assert s["final_position_error_m"] <= POSITION_TOLERANCE_M
+    assert np.allclose(s["final_position_m"], s["back_target"], atol=POSITION_TOLERANCE_M)
+    df = pd.read_parquet(s["log_path"])
+    idx = int(round(s["preempt_at_s"] / 0.002))  # round(), not int(): 0.7/0.002 = 349.99...
+    assert df["command"].iloc[:idx].eq("forward").all()
+    assert df["command"].iloc[idx:].eq("back").all()
 
 
 def test_telemetry_dashboard_hud():

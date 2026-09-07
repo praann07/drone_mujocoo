@@ -11,7 +11,7 @@ echo.
 echo   [1] Launch Live Voice Control (Microphone)
 echo   [2] Launch Keyboard / Text Control (Type commands)
 echo   [3] Run Full Validation Suite ^& 24+5 Flight Trials
-echo   [4] Run Pytest Test Suite (28 Unit Tests)
+echo   [4] Run Pytest Test Suite (31 Unit Tests)
 echo   [5] Exit
 echo.
 set /p choice="Enter choice [1-5]: "

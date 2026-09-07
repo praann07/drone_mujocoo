@@ -87,11 +87,15 @@ Every quantitative result below is derived from reproducible scripts with strict
 
 This is a genuinely 3D project throughout — real MuJoCo rigid-body physics rendering, plus a genuinely data-driven 3D visualization of the identified model's phase-space behavior, not just a flight path.
 
-**Live 3D physics simulation** (offscreen-rendered, real MuJoCo rendering — the same physics driving the interactive demo, not a pre-baked animation):
+**Live 3D physics simulation** (offscreen-rendered, real MuJoCo rendering — the same physics driving the interactive demo, not a pre-baked animation), flown over a 3D printed-map city (roads, block buildings, a forward obstacle tower, parks) drawn into `scene.xml`, with the drone commanding via the cascade:
 
 ![Live 3D Navigation Demo](data/processed/stage_e_demo/stage_e_navigation.gif)
 
-**3D flight trajectory over reference "city bars"** — isometric and top-down views of real logged flights (multiple sessions overlaid), independent of and never re-rendering the MuJoCo scene above:
+**Mid-flight command preemption** — the drone is told "back" at t≈0.7 s while still en route forward, so it reverses immediately instead of continuing toward the obstacle tower ahead (peak excursion 0.39 m vs the 2.3 m tower face):
+
+![Command Preemption](data/processed/stage_e_demo/robustness_preemption.gif) ![Preemption Plot](data/processed/stage_e_demo/robustness_preemption.png)
+
+**3D flight trajectory over the same city model** — isometric and top-down views of real logged flights (multiple sessions overlaid), drawn from the identical city spec (`01_simulation/models/city.py`) that `scene.xml` renders, independent of and never re-rendering the MuJoCo scene above:
 
 ![3D Flight Trajectory](data/processed/stage_e_demo/flight_3d_trajectory.png)
 
@@ -173,7 +177,13 @@ Each stage validates gate criteria and generates empirical logs in `data/process
 # Stage E Demo: Regenerate the 3D offscreen animated GIF with telemetry overlay
 .\.venv\Scripts\python.exe 05_voice_interface\render_offscreen.py
 
-# Full Verification: Run entire unit & regression test suite (28 passed)
+# Stage E Demo: Regenerate the mid-flight command-preemption GIF
+.\.venv\Scripts\python.exe 05_voice_interface\render_offscreen.py --preempt
+
+# Stage E: Headless command-preemption trial + robustness plot + parquet log
+.\.venv\Scripts\python.exe 05_voice_interface\run_preemption.py
+
+# Full Verification: Run entire unit & regression test suite (31 passed)
 .\.venv\Scripts\python.exe -m pytest tests\
 ```
 
@@ -189,7 +199,7 @@ Run the interactive MuJoCo 3D viewer accompanied by the real-time mission-contro
 
 ### 4. Quick Launch (1-Click Windows Batch Scripts)
 Double-click any of the launcher batch scripts directly from File Explorer:
-* **`run_drone.bat`** or **`START_DEMO.bat`** — Interactive launcher menu (flight modes, 24+5 trials, 28-test pytest suite).
+* **`run_drone.bat`** or **`START_DEMO.bat`** — Interactive launcher menu (flight modes, 24+5 trials, 31-test pytest suite).
 * **`run_voice_control.bat`** — Launches live microphone voice control with automatic model loading.
 * **`run_text_control.bat`** — Launches interactive typed navigation (instant, no microphone needed).
 
@@ -199,7 +209,7 @@ Run directly any time after a flight (no server, just a matplotlib window readin
 .\.venv\Scripts\python.exe 05_voice_interface\plot_2d_telemetry.py
 .\.venv\Scripts\python.exe 05_voice_interface\plot_3d_trajectory.py
 ```
-The 3D plot draws simple reference "city bars" at the same corner positions/heights as the reference props already in `scene.xml`, purely for spatial scale — not a re-render of MuJoCo's own 3D scene.
+The 3D plot draws the same city model `scene.xml` renders (imported from `01_simulation/models/city.py` — buildings and the obstacle tower), so the spatial scale matches the live 3D scene — not a re-render of MuJoCo's own 3D viewport. `run_preemption.py` exercises the mid-flight preemption scenario headlessly (reports peak forward excursion, clearance to the obstacle-tower face, and reversal latency) and writes `robustness_preemption.png`.
 
 ---
 

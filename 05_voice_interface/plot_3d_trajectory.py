@@ -1,4 +1,4 @@
-"""Standalone 3D trajectory plot ("3D trajectory over city bars"), run
+"""Standalone 3D trajectory plot ("3D trajectory over the city model"), run
 directly as its own process/window (docs/CLAUDE.md Stage E history).
 
 This is an independent MATPLOTLIB analysis artifact, not a re-render or
@@ -8,13 +8,12 @@ PATH from the most recently logged chained-flight parquet(s)
 (data/processed/stage_e_voice_sessions/stage_e_chained_*.parquet - a
 genuine continuous multi-leg path, unlike the isolated-trial log where
 every trial resets to the origin), overlaying up to the last
-MAX_FLIGHTS_OVERLAID flights in different colors, together with simple
-"city bar" markers at the same corner positions/heights as the reference
-props in 01_simulation/models/scene.xml (ref_block_1..4, at world
-(+-8,+-8)), so the plot has spatial scale/context - purely a visualization
-aid, reading the SAME reference-prop geometry already baked into the
-MuJoCo scene, not duplicating or streaming its rendering. Shows both an
-isometric view and a top-down/bird's-eye view side by side.
+MAX_FLIGHTS_OVERLAID flights in different colors, together with the SAME
+city model that scene.xml now renders (imported from
+01_simulation/models/city.py - buildings + obstacle tower as simple bars),
+so the plot has the identical spatial layout/scale the 3D scene shows and
+the drone visibly flies the central plaza clear of every building footprint.
+Shows both an isometric view and a top-down/bird's-eye view side by side.
 
     .venv\\Scripts\\python.exe 05_voice_interface\\plot_3d_trajectory.py
 """
@@ -28,18 +27,10 @@ import pandas as pd
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (registers 3d projection)
 
 ROOT = Path(__file__).resolve().parent.parent
+for _p in ("05_voice_interface", "01_simulation/models"):
+    sys.path.insert(0, str(ROOT / _p))
 SESSIONS_DIR = ROOT / "data" / "processed" / "stage_e_voice_sessions"
-
-# Must match 01_simulation/models/scene.xml's ref_block_* geoms
-# exactly (pos, size) - kept here as a small duplicated constant rather
-# than parsing the XML, since this is a cosmetic reference marker, not a
-# physics quantity that would risk drifting out of sync with real behavior.
-_CITY_BARS = [  # (x, y, half_size_xy, full_height)
-    (8.0, 8.0, 0.6, 2.0),
-    (-8.0, 8.0, 0.5, 3.2),
-    (8.0, -8.0, 0.7, 1.4),
-    (-8.0, -8.0, 0.55, 2.6),
-]
+from city import CITY_OBJECTS  # noqa: E402
 
 
 MAX_FLIGHTS_OVERLAID = 3
@@ -62,14 +53,23 @@ def _recent_chained_parquets(n: int = MAX_FLIGHTS_OVERLAID) -> tuple[list[Path],
     return ([files[-1]], False) if files else ([], False)
 
 
-def _draw_city_bars(ax):
-    for x, y, half, height in _CITY_BARS:
-        ax.bar3d(x - half, y - half, 0, 2 * half, 2 * half, height,
-                  color="0.6", alpha=0.5, shade=True)
+def _draw_city(ax):
+    for obj in CITY_OBJECTS:
+        if obj.kind == "tower":
+            color = "#e8590c"
+            label = "obstacle tower"
+        elif obj.kind == "building":
+            color = "#495057"
+            label = None
+        else:
+            continue
+        ax.bar3d(obj.x - obj.half_x, obj.y - obj.half_y, 0,
+                 2 * obj.half_x, 2 * obj.half_y, obj.height,
+                 color=color, alpha=0.55, shade=True, label=label)
 
 
 def _plot_flights(ax, flights: list[tuple[pd.DataFrame, str, str]]):
-    _draw_city_bars(ax)
+    _draw_city(ax)
     for df, label, color in flights:
         xs, ys, zs = df["achieved_px"], df["achieved_py"], df["achieved_pz"]
         ax.plot(xs, ys, zs, color=color, linewidth=2, marker="o", markersize=3, label=label)
@@ -126,7 +126,7 @@ def main() -> int:
     ax_top.view_init(elev=90, azim=-90)
     ax_top.set_title("Top-down (bird's-eye) view")
 
-    fig.suptitle(f"3D flight trajectory over reference city bars"
+    fig.suptitle(f"3D flight trajectory over the city model"
                  + (f" ({len(flights)} overlaid flights)" if len(flights) > 1 else ""))
     fig.tight_layout()
 
