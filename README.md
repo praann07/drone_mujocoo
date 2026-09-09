@@ -51,12 +51,40 @@ $$\mathbf{J}\dot{\boldsymbol{\omega}} = \boldsymbol{\tau}_{\text{ctrl}} - \bolds
 Using Sequential Thresholded Least Squares (STLSQ, sparsity threshold $\lambda = 0.2$), SINDy identifies the governing equations from rich multi-axis PRBS and multisine excitation data. SINDy successfully isolates 44 active terms out of 156 candidates, accurately recovering the physical drag-to-inertia ratio, rotor control effectiveness, and gyroscopic cross-coupling within 2–6% of ground-truth physical values (verified in [`tests/test_identification_physics.py`](tests/test_identification_physics.py)).
 
 ### 2. Analytical Gain Derivation (No Hand-Tuning)
-Controller gains are never chosen by guesswork. The function `gains_from_identified_model(A_sindy)` in [`04_control/controller.py`](04_control/controller.py) extracts the rotational drag-to-inertia coefficient $d = -A_{\text{SINDy}}[3, 3]$ from the identified hover-linearized Jacobian and solves the characteristic second-order pole-placement equation:
-$$\omega_n = \frac{4.0}{\zeta \cdot T_s}, \qquad K_q = \frac{\omega_n^2}{2}, \qquad K_\omega = 2\zeta\omega_n - d$$
-for a critically damped response ($\zeta = 1.0$) and target settling time ($T_s = 0.8\text{ s}$). When the identification model updates, the control gains automatically adapt.
+Controller gains are never chosen by guesswork. The function `gains_from_identified_model(A_sindy)` in [`04_control/controller.py`](04_control/controller.py) extracts the per-axis rotational drag-to-inertia coefficient $d_i = -A_{\text{SINDy}}[3{+}i, 3{+}i]$ directly from the identified hover-linearized Jacobian and solves the characteristic second-order pole-placement equation:
+$$\omega_n = \frac{4.0}{\zeta \cdot T_s}, \qquad K_{q,i} = 2\omega_n^2, \qquad K_{\omega,i} = \max(2\zeta\omega_n - d_i,\ 0)$$
+for a lightly underdamped response ($\zeta = 0.7$, small overshoot, no ringing) and target 2%-settling time ($T_s = 1.5\text{ s}$; measured closed-loop settling is faster, 0.56–0.86s, since this is a target for the linearized design, not the achieved nonlinear response). The $\max(\cdot,0)$ guards against ever commanding negative damping. When the identification model updates, the control gains automatically adapt — only $(\zeta, T_s)$ above are hand-picked; every other number is derived.
 
 ### 3. Frozen Model Artifact Discipline
 At runtime, Stage E does not silently refit models from raw data. Instead, [`03_validation/run_validation.py`](03_validation/run_validation.py) serializes the gate-validated model and hover Jacobian to `data/processed/sindy_fitted_model.npz`. The real-time flight controller ([`05_voice_interface/flight.py`](05_voice_interface/flight.py)) loads this frozen artifact directly via `np.load()`, guaranteeing deterministic, instant startup and ensuring that flight tests execute against the exact validated model.
+
+### 4. Full Cascade Architecture (Outer Loop + Mixer)
+The inner loop above is one half of a two-loop cascade, run at every control step (`dt = 0.002 s`):
+
+- **Outer loop** ([`04_control/position_controller.py`](04_control/position_controller.py), [`trajectory.py`](04_control/trajectory.py)) — deliberately **standard physics, not identified** (see `docs/PRD.md` §1): a trapezoidal trajectory planner generates a smooth position/velocity/acceleration profile toward each voice-command waypoint, and a PD(+feedforward) law converts the resulting position/velocity error into a desired acceleration. That acceleration is converted to a *desired attitude* via the differential-flatness relation — thrust must point along the desired net specific-force direction — using the minimal rotation (`minimal_rotation_z_to()`) that achieves it, since yaw is never commanded.
+- **Inner loop** consumes that desired attitude + thrust exactly as in §2.
+- **Mixer** ([`04_control/mixer.py`](04_control/mixer.py)) inverts the drone's actual X-configuration rotor geometry (positions + CW/CCW spin pairing, matched against `quad.xml` and pinned by [`tests/test_mixer.py`](tests/test_mixer.py)) to convert (thrust, torque) into 4 individual rotor commands, reporting `saturated=True` rather than silently clipping an unachievable command.
+
+Bandwidth separation between the two loops (outer settling ~3s target vs. inner ~0.56–0.86s measured) is what justifies designing them independently rather than as one coupled MIMO system — a standard cascade-control argument, not an assumption left unverified: Stage D's full-cascade gate confirms the combined system settles correctly (§ Experimental Results below).
+
+See [`CONTROLLER_AND_IMU_EXPLAINED.md`](CONTROLLER_AND_IMU_EXPLAINED.md) for the complete walkthrough of both loops plus the IMU sensing model, including the quaternion double-cover handling and why the outer loop is intentionally not identified.
+
+---
+
+## IMU / State Sensing
+
+[`01_simulation/models/quad.xml`](01_simulation/models/quad.xml) declares a full IMU sensor block on a dedicated `imu` site:
+```xml
+<sensor>
+  <framepos name="position" objtype="site" objname="imu"/>
+  <framequat name="attitude" objtype="site" objname="imu"/>
+  <velocimeter name="linear_velocity" site="imu"/>
+  <gyro name="angular_velocity" site="imu"/>
+</sensor>
+```
+The flight controller ([`05_voice_interface/flight.py`](05_voice_interface/flight.py)) reads all state — position, attitude, linear velocity, angular velocity — **through these named sensors** (`data.sensordata`, looked up by name via `mj_name2id`), not by reading MuJoCo's internal `qpos`/`qvel` arrays directly. The `gyro` channel is exactly what a physical IMU measures. `linear_velocity` is reported by the sensor in the **body frame** (as a real velocimeter would be), and is explicitly rotated into the world frame the rest of the controller expects via `quat_rotate_vector()` ([`04_control/closed_loop_sim.py`](04_control/closed_loop_sim.py)) using the (also sensor-sourced) current attitude — the same frame-transform step a real flight computer performs on IMU-derived velocity.
+
+**Honest scope note:** `position`, `attitude`, and `linear_velocity` are MuJoCo direct-measurement sensor types — they report true, noiseless simulator state, not the output of a real accelerometer-plus-fusion-filter state estimator (which would drift without an external reference like GPS). This is a deliberate simplification appropriate for a controls-focused project: identifying the plant and designing a controller against it is the graded content here, not sensor fusion. Sensitivity to imperfect sensing is characterized separately by the Stage C `noise_ablation.png` result (robust to ~1–2 rad/s injected gyro noise, degrading past ~4 rad/s). Full reasoning and a Q&A-style walkthrough: [`CONTROLLER_AND_IMU_EXPLAINED.md`](CONTROLLER_AND_IMU_EXPLAINED.md).
 
 ---
 

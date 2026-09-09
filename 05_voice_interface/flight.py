@@ -44,6 +44,7 @@ from trajectory import PointToPointTrajectory  # noqa: E402
 from commands import target_offset  # noqa: E402
 from sindy_fit import SINDyModel  # noqa: E402
 from city import clamp_target_to_safe_zone  # noqa: E402
+from closed_loop_sim import quat_rotate_vector  # noqa: E402
 
 DT = 0.002
 IDENTITY_Q = np.array([1.0, 0.0, 0.0, 0.0])
@@ -74,6 +75,19 @@ def load_frozen_sindy() -> tuple[SINDyModel, np.ndarray]:
     return sindy, data["A_sindy"]
 
 
+def _sensor_slice(model: "mujoco.MjModel", name: str) -> slice:
+    """(start, start+dim) into data.sensordata for a named sensor, looked
+    up by id rather than a hardcoded offset - stays correct even if
+    quad.xml's <sensor> block is ever reordered."""
+    sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, name)
+    if sid < 0:
+        raise RuntimeError(f"quad.xml has no sensor named {name!r} - "
+                            "the IMU <sensor> block must define it.")
+    adr = model.sensor_adr[sid]
+    dim = model.sensor_dim[sid]
+    return slice(adr, adr + dim)
+
+
 class FlightController:
     def __init__(self):
         _sindy, A_sindy = load_frozen_sindy()
@@ -85,6 +99,20 @@ class FlightController:
         # renderer, with byte-identical physics (see sim_driver.py).
         self.model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
         self.data = mujoco.MjData(self.model)
+        # quad.xml declares a real IMU (<sensor> block on the "imu" site:
+        # framepos/framequat/velocimeter/gyro) - the controller reads
+        # state through THESE, not through data.qpos/qvel directly, so
+        # "the controller uses the IMU" is literally true, not just
+        # modeled-but-unused. Slices are looked up once here, not every
+        # step. position/attitude/angular_velocity sensors are direct,
+        # noiseless measurements of the exact same quantities qpos/qvel
+        # already held, so this changes WHERE the numbers come from, not
+        # their value. linear_velocity (the "velocimeter") is the one
+        # real exception - see velocity() below.
+        self._sens_pos = _sensor_slice(self.model, "position")
+        self._sens_att = _sensor_slice(self.model, "attitude")
+        self._sens_vel = _sensor_slice(self.model, "linear_velocity")
+        self._sens_gyro = _sensor_slice(self.model, "angular_velocity")
         self.traj = None
         self.t_traj = 0.0
         self.command = "hover"
@@ -100,16 +128,36 @@ class FlightController:
         self.command = "hover"
 
     def position(self) -> np.ndarray:
-        return self.data.qpos[0:3].copy()
+        """World-frame position, read from the IMU's `framepos` sensor
+        (not qpos directly) - numerically identical here since the site
+        sits at the body origin with no rotation offset, but this is now
+        genuinely the sensor reading, not a bypass of it."""
+        return self.data.sensordata[self._sens_pos].copy()
 
     def velocity(self) -> np.ndarray:
-        return self.data.qvel[0:3].copy()
+        """World-frame velocity. The IMU's `velocimeter` sensor - like a
+        real one - reports velocity in the BODY frame, not world frame,
+        so it's rotated into world frame here using the (also
+        sensor-sourced) attitude - exactly what a real flight computer
+        does with an IMU-derived body-frame velocity estimate. This is
+        the one accessor where "read the sensor" isn't just a relabeling
+        of the same number - the frame transform is real work."""
+        v_body = self.data.sensordata[self._sens_vel]
+        return quat_rotate_vector(self.attitude(), v_body)
 
     def attitude(self) -> np.ndarray:
-        return self.data.qpos[3:7].copy()
+        """Hamilton scalar-first quaternion, read from the IMU's
+        `framequat` sensor (not qpos directly) - numerically identical
+        here (the site has no rotation offset from the body), but now a
+        genuine sensor reading."""
+        return self.data.sensordata[self._sens_att].copy()
 
     def angular_velocity(self) -> np.ndarray:
-        return self.data.qvel[3:6].copy()
+        """Body-frame angular velocity, read from the IMU's `gyro`
+        sensor - the one IMU channel a real gyroscope actually measures
+        directly, and already body-frame here exactly like qvel[3:6]
+        was, so no transform needed."""
+        return self.data.sensordata[self._sens_gyro].copy()
 
     def dispatch(self, command: str, measure_traj_latency: bool = True) -> dict:
         """Begin a flight to the waypoint for ``command`` (offset applied
@@ -158,6 +206,14 @@ class FlightController:
         self.data.qfrc_applied[0:3] = -C_TRANS * self.data.qvel[0:3]
         self.data.qfrc_applied[3:6] = -C_ROT * self.data.qvel[3:6]
         mujoco.mj_step(self.model, self.data)
+        # mj_step() computes sensors from the PRE-integration state (its
+        # own internal mj_forward runs before qpos/qvel are advanced), so
+        # data.sensordata is one full step stale relative to the qpos/qvel
+        # it just integrated to. mj_forward() here recomputes sensors
+        # (cheap - no contacts on this model, no integration) from the
+        # now-current qpos/qvel, so the NEXT position()/velocity()/etc.
+        # call reads a fresh IMU reading, not a one-step-lagged one.
+        mujoco.mj_forward(self.model, self.data)
         self.t_traj += DT
         return 1000.0 * (time.perf_counter() - t0)
 

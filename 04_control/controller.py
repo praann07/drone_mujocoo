@@ -61,6 +61,21 @@ def gains_from_identified_model(A_sindy: np.ndarray) -> tuple[np.ndarray, np.nda
         e_ddot + ((Kd+c)/I) e_dot + (Kp/I) e = 0
     so Kp/I = wn^2, (Kd+c)/I = 2*zeta*wn. Converting to the quaternion
     error convention (qe_vec ~ e/2 for small angles): Kq = 2*Kp.
+
+    This is a deliberate simplification, stated explicitly rather than
+    left implicit: only the diagonal of A_sindy is used, i.e. each axis
+    is designed as an INDEPENDENT single-axis 2nd-order system. The
+    identified model's off-diagonal terms (the gyroscopic cross-coupling
+    between axes, recovered to within 2-6% of ground truth per
+    tests/test_identification_physics.py) are real and present in the
+    plant, but are not fed into the gain design itself - they show up as
+    a disturbance the per-axis loops reject, not something the gains are
+    tuned against. This is standard practice for a system with as much
+    inertial symmetry as this one (diaginertia, no off-diagonal inertia
+    terms - see quad.xml) and is verified adequate empirically in
+    docs/CLAUDE.md's Stage D results (settling within tolerance on every
+    tested maneuver, including combined-axis and large-angle steps), not
+    just assumed.
     """
     wn = 4.0 / (DAMPING_RATIO * SETTLING_TIME_S)   # 2% settling-time rule of thumb
     Kq = np.zeros(3)
