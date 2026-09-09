@@ -3,8 +3,8 @@
 **Course:** Data-Driven Control of Drones  
 **Status:** All Verification Gates Passed (Stages A → E) — Verified in [`CLAUDE.md`](CLAUDE.md)  
 **Physics Simulator:** MuJoCo 6-DOF Rigid-Body Dynamics (`quad.xml`, `scene.xml`)  
-**Identification:** SINDy (Sparse Identification of Nonlinear Dynamics) on $\mathbb{SO}(3)$ Rotational Dynamics  
-**Control Architecture:** Quaternion Cascaded Control (Newtonian Outer Loop $\rightarrow$ SINDy-Derived Inner Loop)
+**Identification:** SINDy (Sparse Identification of Nonlinear Dynamics) on the drone's rotational dynamics  
+**Control Architecture:** Quaternion Cascaded Control (Newtonian Outer Loop → SINDy-Derived Inner Loop)
 
 ---
 
@@ -12,9 +12,9 @@
 
 Course projects in data-driven drone control commonly suffer from one of two failure modes: either an offline speech/UI layer is grafted onto textbook physics control without empirical system identification, or system identification is conducted in a Jupyter notebook without ever stabilizing closed-loop flight in a 3D simulation.
 
-This project bridges that divide through a strict, principled architectural separation: **only the inner attitude loop is identified from data.** Translational acceleration of a multirotor in world coordinates is governed by Newtonian mechanics ($\ddot{\mathbf{p}} = \frac{1}{m}\mathbf{R}\mathbf{f}_z - \mathbf{g}$), which constitutes an exact double integrator with nothing for data-driven algorithms to discover. Conversely, the body-frame rotational dynamics exhibit rich nonlinear aerodynamics, rotor cross-coupling, and quaternion-constrained kinematics on $\mathbb{SO}(3)$ where data-driven identification provides immense value.
+This project bridges that divide through a strict, principled architectural separation: **only the inner attitude loop is identified from data.** Moving in a straight line under a thrust vector is just Newton's second law — a plain double integrator with nothing for a data-driven algorithm to discover. Rotation is different: it has real nonlinear aerodynamics, cross-coupling between axes, and quaternion-constrained kinematics — genuinely worth identifying from data, which is exactly what this project does.
 
-The inner-loop attitude controller gains ($K_q, K_\omega$) are **analytically derived** from the hover-linearized Jacobian of the identified SINDy model via pole placement—eliminating arbitrary PID hand-tuning. The complete system runs end-to-end: spoken voice commands drive world-frame waypoints, a Newtonian outer loop generates smooth trajectories and desired attitude streams, the SINDy-derived inner controller commands four rotor thrusts in MuJoCo physics, and flight telemetry is streamed live to a mission-control HUD beside the 3D viewport.
+The inner-loop attitude controller's gains are **analytically derived** — calculated directly from the identified SINDy model's own physics — not hand-tuned by trial and error. The complete system runs end-to-end: spoken voice commands drive world-frame waypoints, a Newtonian outer loop generates smooth trajectories and desired attitude streams, the SINDy-derived inner controller commands four rotor thrusts in MuJoCo physics, and flight telemetry is streamed live to a mission-control HUD beside the 3D viewport.
 
 ```
  spoken command ("forward", "back", "left", "right", "up", "down", "hover", "stop")
@@ -44,16 +44,12 @@ The inner-loop attitude controller gains ($K_q, K_\omega$) are **analytically de
 ## Methodology: Genuinely Data-Driven Control
 
 ### 1. SINDy Rotational Identification
-Attitude kinematics and dynamics are parameterized by state $\mathbf{x} = [\boldsymbol{\theta}^T, \boldsymbol{\omega}^T]^T \in \mathbb{R}^6$ (small-angle attitude coordinates and body angular rates) and control inputs $\mathbf{u} = [u_1, u_2, u_3, u_4]^T \in \mathbb{R}^4$:
-$$\dot{\boldsymbol{\theta}} \approx \boldsymbol{\omega}$$
-$$\mathbf{J}\dot{\boldsymbol{\omega}} = \boldsymbol{\tau}_{\text{ctrl}} - \boldsymbol{\omega} \times (\mathbf{J}\boldsymbol{\omega}) - c_{\text{rot}}\boldsymbol{\omega}$$
+The drone's rotation is described by two things: its attitude (which way it's pointing) and its angular velocity — how fast it's spinning on each axis. SINDy is given the 4 motor commands and the resulting angular velocity from real flight data, and has to figure out the equation connecting them, on its own — it isn't told the physics in advance.
 
-Using Sequential Thresholded Least Squares (STLSQ, sparsity threshold $\lambda = 0.2$), SINDy identifies the governing equations from rich multi-axis PRBS and multisine excitation data. SINDy successfully isolates 44 active terms out of 156 candidates, accurately recovering the physical drag-to-inertia ratio, rotor control effectiveness, and gyroscopic cross-coupling within 2–6% of ground-truth physical values (verified in [`tests/test_identification_physics.py`](tests/test_identification_physics.py)).
+It does this with **Sequential Thresholded Least Squares (STLSQ)**: try a large library of candidate physics terms, fit them all, then repeatedly drop the weakest ones until only the terms that actually matter survive. Out of 156 candidate terms, it kept **44** — and those 44 recover the real drag, motor effectiveness, and cross-axis coupling numbers within **2–6%** of the simulator's actual ground truth (verified in [`tests/test_identification_physics.py`](tests/test_identification_physics.py)). That match is the real proof it learned genuine physics, not a curve that merely looks right.
 
 ### 2. Analytical Gain Derivation (No Hand-Tuning)
-Controller gains are never chosen by guesswork. The function `gains_from_identified_model(A_sindy)` in [`04_control/controller.py`](04_control/controller.py) extracts the per-axis rotational drag-to-inertia coefficient $d_i = -A_{\text{SINDy}}[3{+}i, 3{+}i]$ directly from the identified hover-linearized Jacobian and solves the characteristic second-order pole-placement equation:
-$$\omega_n = \frac{4.0}{\zeta \cdot T_s}, \qquad K_{q,i} = 2\omega_n^2, \qquad K_{\omega,i} = \max(2\zeta\omega_n - d_i,\ 0)$$
-for a lightly underdamped response ($\zeta = 0.7$, small overshoot, no ringing) and target 2%-settling time ($T_s = 1.5\text{ s}$; measured closed-loop settling is faster, 0.56–0.86s, since this is a target for the linearized design, not the achieved nonlinear response). The $\max(\cdot,0)$ guards against ever commanding negative damping. When the identification model updates, the control gains automatically adapt — only $(\zeta, T_s)$ above are hand-picked; every other number is derived.
+Controller gains are never chosen by guesswork. `gains_from_identified_model()` in [`04_control/controller.py`](04_control/controller.py) reads the drag-vs-inertia number straight off the identified model (one per rotation axis) and plugs it into a standard, textbook control-design rule that targets a specific response speed and damping — the same 2nd-order design method taught in any controls course, just fed real identified numbers instead of guessed ones. The only two things chosen by hand at all are how fast (settling time) and how smoothly (damping) it should respond — every actual gain number is calculated from those two choices plus the identified physics. When the identified model changes, the gains recalculate automatically. (Full formula, worked through step by step: [`CONTROLLER_AND_IMU_EXPLAINED.md`](CONTROLLER_AND_IMU_EXPLAINED.md).)
 
 ### 3. Frozen Model Artifact Discipline
 At runtime, Stage E does not silently refit models from raw data. Instead, [`03_validation/run_validation.py`](03_validation/run_validation.py) serializes the gate-validated model and hover Jacobian to `data/processed/sindy_fitted_model.npz`. The real-time flight controller ([`05_voice_interface/flight.py`](05_voice_interface/flight.py)) loads this frozen artifact directly via `np.load()`, guaranteeing deterministic, instant startup and ensuring that flight tests execute against the exact validated model.
@@ -61,7 +57,7 @@ At runtime, Stage E does not silently refit models from raw data. Instead, [`03_
 ### 4. Full Cascade Architecture (Outer Loop + Mixer)
 The inner loop above is one half of a two-loop cascade, run at every control step (`dt = 0.002 s`):
 
-- **Outer loop** ([`04_control/position_controller.py`](04_control/position_controller.py), [`trajectory.py`](04_control/trajectory.py)) — deliberately **standard physics, not identified** (see `docs/PRD.md` §1): a trapezoidal trajectory planner generates a smooth position/velocity/acceleration profile toward each voice-command waypoint, and a PD(+feedforward) law converts the resulting position/velocity error into a desired acceleration. That acceleration is converted to a *desired attitude* via the differential-flatness relation — thrust must point along the desired net specific-force direction — using the minimal rotation (`minimal_rotation_z_to()`) that achieves it, since yaw is never commanded.
+- **Outer loop** ([`04_control/position_controller.py`](04_control/position_controller.py), [`trajectory.py`](04_control/trajectory.py)) — deliberately **standard physics, not identified** (see `docs/PRD.md` §1): a trapezoidal trajectory planner generates a smooth speed-up/cruise/slow-down path toward each voice-command waypoint, and a PD controller converts the resulting position/velocity error into a desired acceleration. That acceleration is then converted into "which way should the drone tilt" — since thrust has to point in the direction you want to accelerate, tilting is just how a drone redirects thrust sideways — using the smallest possible tilt that achieves it (`minimal_rotation_z_to()`), since yaw is never commanded.
 - **Inner loop** consumes that desired attitude + thrust exactly as in §2.
 - **Mixer** ([`04_control/mixer.py`](04_control/mixer.py)) inverts the drone's actual X-configuration rotor geometry (positions + CW/CCW spin pairing, matched against `quad.xml` and pinned by [`tests/test_mixer.py`](tests/test_mixer.py)) to convert (thrust, torque) into 4 individual rotor commands, reporting `saturated=True` rather than silently clipping an unachievable command.
 
@@ -95,8 +91,8 @@ Every quantitative result below is derived from reproducible scripts with strict
 | Stage | Verification Focus | Quantitative Result | Status |
 |---|---|---|:---:|
 | **Stage A** — Excitation | Multi-axis PRBS & multisine persistent excitation | Zero runaway trials; rich cross-axis spectral decay | ✅ PASS |
-| **Stage B** — Identification | SINDy held-out one-step prediction | **NRMSE = 0.0786** / **$R^2$ = 0.9946** (44/156 terms) | ✅ PASS |
-| **Stage B** — Identification | DMDc held-out prediction (near-hover regime) | **NRMSE = 0.0825** / **$R^2$ = 0.9926** (degrades to 0.70 outside hover) | ✅ PASS |
+| **Stage B** — Identification | SINDy held-out one-step prediction | **NRMSE = 0.0786** / **R² = 0.9946** (44/156 terms) | ✅ PASS |
+| **Stage B** — Identification | DMDc held-out prediction (near-hover regime) | **NRMSE = 0.0825** / **R² = 0.9926** (degrades to 0.70 outside hover) | ✅ PASS |
 | **Stage B** — Physics Sanity | Physical coefficient recovery vs. ground truth | Recovered within **2% to 6%** (drag, mixer effectiveness, gyro cross-term) | ✅ PASS |
 | **Stage C** — Rollout Stability | 11 s open-loop autonomous rollout | **SINDy: 0/7 diverged** (full envelope) \| DMDc: 0/16 (hover only) | ✅ PASS |
 | **Stage C** — Head-to-Head | Evaluated in DMDc's *own* near-hover regime | SINDy **0.0789** vs DMDc **0.0825** NRMSE (SINDy wins even near hover) | ✅ PASS |
@@ -127,7 +123,7 @@ This is a genuinely 3D project throughout — real MuJoCo rigid-body physics ren
 
 ![3D Flight Trajectory](data/processed/voice_demo/flight_3d_trajectory.png)
 
-**3D angular-velocity phase portrait** — ground truth vs. SINDy-predicted trajectory through the identified model's own state space $(\omega_x, \omega_y, \omega_z)$, for a combined-axis held-out rollout. This is tied directly to identification quality, not flight path:
+**3D angular-velocity phase portrait** — ground truth vs. SINDy-predicted trajectory through the identified model's own spin-rate space (ωx, ωy, ωz — spin on each of the 3 axes), for a combined-axis held-out rollout. This is tied directly to identification quality, not flight path:
 
 ![3D Rollout Phase Portrait](data/processed/validation_plots/rollout_sindy_long_3d_phase.png)
 
@@ -141,7 +137,7 @@ This is a genuinely 3D project throughout — real MuJoCo rigid-body physics ren
 |:---:|:---:|
 | ![Head to Head](data/processed/validation_plots/head_to_head_near_hover.png) | ![Eigenvalues](data/processed/validation_plots/eigenvalue_spectrum.png) |
 
-| STLSQ Sparsity Ablation ($\lambda$ sweep) | Additive Gaussian Noise Sensitivity |
+| STLSQ Sparsity Ablation (threshold sweep) | Additive Gaussian Noise Sensitivity |
 |:---:|:---:|
 | ![Sparsity Ablation](data/processed/validation_plots/sparsity_ablation.png) | ![Noise Ablation](data/processed/validation_plots/noise_ablation.png) |
 
