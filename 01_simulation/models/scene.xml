@@ -19,7 +19,18 @@
          of truth in city.py - edit there, never here. texrepeat="1 1" maps the
          1024x1024 texture across the full 20x20 m plane. -->
     <texture type="2d" name="map" file="map_texture.png" width="1024" height="1024"/>
-    <material name="city_map" texture="map" texuniform="true" texrepeat="1 1" reflectance="0.06"/>
+    <!-- reflectance=0, specular/shininess near-zero: a printed paper map
+         has no mirror-like reflection at all. Even reflectance=0.06
+         produced a blown-out white patch in the foreground of the chase
+         camera's offscreen GIFs - MuJoCo's mirror-reflection term gets
+         much stronger at grazing view angles (looking nearly along the
+         floor, which is exactly what a low chase camera does in the
+         foreground), so a "small" reflectance value is not small there.
+         Confirmed by actually re-rendering and looking at the frame, not
+         guessed - the first attempt (specular/shininess only) barely
+         changed anything, which is what pointed at reflectance instead. -->
+    <material name="city_map" texture="map" texuniform="true" texrepeat="1 1"
+              reflectance="0" specular="0.05" shininess="0.02"/>
     <material name="prop_mat" rgba="0.5 0.55 0.6 1" specular="0.2" shininess="0.1"/>
   </asset>
 
@@ -27,7 +38,7 @@
     <!-- Sun-like key light (angled, casts shadows) plus the original
          overhead fill light - two lights read much better than one flat
          overhead source, which was washing out the drone's shading. -->
-    <light name="sun" pos="4 -4 6" dir="-0.5 0.5 -0.7" diffuse="0.9 0.9 0.85" specular="0.3 0.3 0.3" castshadow="true"/>
+    <light name="sun" pos="4 -4 6" dir="-0.5 0.5 -0.7" diffuse="0.9 0.9 0.85" specular="0.3 0.3 0.3" castshadow="false"/>
     <light pos="0 0 4" dir="0 0 -1" diffuse="0.4 0.4 0.4" specular="0.1 0.1 0.1" castshadow="false"/>
     <geom name="floor" type="plane" size="10 10 0.1" material="city_map" contype="0" conaffinity="0"/>
 

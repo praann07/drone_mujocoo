@@ -46,6 +46,11 @@ TREE_GREEN = (96, 150, 100)
 PAD_CYAN = (86, 200, 231)
 TOWER_ORANGE = (222, 122, 80)
 WARN_RED = (214, 61, 61)
+LANE_YELLOW = (230, 190, 60)
+EDGE_WHITE = (205, 200, 188)  # soft curb-line gray - ROAD itself is near-white,
+                              # so true white (255,255,255) barely showed up
+DASH_LEN_M = 0.5
+GAP_LEN_M = 0.4
 
 
 def to_px(x: float, y: float) -> tuple[float, float]:
@@ -65,6 +70,52 @@ def lighten(c: tuple[int, int, int], f: float = 0.35) -> tuple[int, int, int]:
     return tuple(int(ch + (255 - ch) * f) for ch in c)
 
 
+def _dash_spans(lo: float, hi: float, dash: float, gap: float) -> list[tuple[float, float]]:
+    """(start, end) world-coordinate spans of each painted dash along a
+    line from `lo` to `hi`, alternating dash/gap starting with a dash."""
+    spans, t, on = [], lo, True
+    while t < hi:
+        t_end = min(t + (dash if on else gap), hi)
+        if on:
+            spans.append((t, t_end))
+        t = t_end
+        on = not on
+    return spans
+
+
+def draw_road_markings(d: ImageDraw.ImageDraw) -> None:
+    """Paint actual road markings (dashed yellow center line + solid white
+    edge lines) on the plain road corridors, the way a real printed street
+    map (or the reference project's simpler checkerboard-plus-road-lines
+    look) shows a road instead of just an empty light-colored strip. Center
+    dashes are skipped where they'd cross an intersection (a real
+    centerline doesn't run through one either) - purely cosmetic, drawn on
+    the same non-collidable floor texture as everything else here."""
+    hw = ROAD_WORLD_W / 2.0
+    edge_offset = hw - 0.08  # inset from the road's outer edge
+
+    def crosses_intersection(lo: float, hi: float, others: tuple[float, ...]) -> bool:
+        return any(not (hi < c - hw or lo > c + hw) for c in others)
+
+    for rx in (-4.0, 4.0):
+        for y0, y1 in _dash_spans(-HALF_WORLD, HALF_WORLD, DASH_LEN_M, GAP_LEN_M):
+            if crosses_intersection(y0, y1, (-4.0, 4.0)):
+                continue
+            d.line((to_px(rx, y0), to_px(rx, y1)), fill=LANE_YELLOW, width=3)
+        for side in (-1, 1):
+            ex = rx + side * edge_offset
+            d.line((to_px(ex, -HALF_WORLD), to_px(ex, HALF_WORLD)), fill=EDGE_WHITE, width=2)
+
+    for ry in (-4.0, 4.0):
+        for x0, x1 in _dash_spans(-HALF_WORLD, HALF_WORLD, DASH_LEN_M, GAP_LEN_M):
+            if crosses_intersection(x0, x1, (-4.0, 4.0)):
+                continue
+            d.line((to_px(x0, ry), to_px(x1, ry)), fill=LANE_YELLOW, width=3)
+        for side in (-1, 1):
+            ey = ry + side * edge_offset
+            d.line((to_px(-HALF_WORLD, ey), to_px(HALF_WORLD, ey)), fill=EDGE_WHITE, width=2)
+
+
 def draw_map() -> Image.Image:
     img = Image.new("RGB", (SIZE, SIZE), PAPER)
     d = ImageDraw.Draw(img)
@@ -76,6 +127,8 @@ def draw_map() -> Image.Image:
         d.rectangle(rect((rx - hw, -HALF_WORLD, rx + hw, HALF_WORLD)), fill=ROAD)
     for ry in (-4.0, 4.0):
         d.rectangle(rect((-HALF_WORLD, ry - hw, HALF_WORLD, ry + hw)), fill=ROAD)
+
+    draw_road_markings(d)
 
     # Parks + trees + home pad first (flat, beneath buildings' strokes).
     for o in CITY_OBJECTS:

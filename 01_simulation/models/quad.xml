@@ -93,6 +93,17 @@
            render_offscreen.py and demo.py so the drone actually fills the
            frame instead of being a speck against a default far-away view. -->
       <camera name="chase" pos="-1.4 -1.4 0.7" xyaxes="0.707 -0.707 0  0.24 0.24 0.94" mode="trackcom"/>
+      <!-- Bird's-eye/top-down view: directly above the drone, looking
+           straight down (zaxis = cross(xaxis,yaxis) = +Z, camera looks
+           along -zaxis = down). xaxis=world+X, yaxis=world+Y so the image
+           reads like a normal map (north/+Y up, east/+X right). Height
+           tuned (not 14m, which made the +-1.5m command envelope only a
+           ~13% frame-width shift - correct but too subtle to visibly read
+           as "the drone is moving") so a full +-1.5m command is a clearly
+           visible ~40% shift, while the near-ring buildings (~4.4-4.6m
+           out, see city.py) stay partially in frame for context. Purely a
+           second viewpoint - zero mass/DOF, cannot affect physics. -->
+      <camera name="birdseye" pos="0 0 9" xyaxes="1 0 0  0 1 0" mode="trackcom"/>
     </body>
   </worldbody>
 

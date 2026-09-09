@@ -30,8 +30,17 @@ SESSIONS_DIR = ROOT / "data" / "processed" / "stage_e_voice_sessions"
 
 
 def _latest_parquet() -> Path | None:
-    files = sorted(SESSIONS_DIR.glob("*.parquet"))
-    return files[-1] if files else None
+    """Most RECENTLY WRITTEN log, by actual file modification time - not
+    alphabetical filename sort. This directory holds three different
+    filename prefixes (stage_e_trials_, stage_e_chained_, stage_e_
+    preemption_), and 't' > 'c' > 'p' alphabetically regardless of the
+    timestamp each embeds, so a plain `sorted()` on the whole filename
+    would always return a stage_e_trials_* file (if one exists) even when
+    a stage_e_chained_* file from a live demo session was written seconds
+    ago - silently showing an old headless test run instead of what was
+    actually just flown."""
+    files = list(SESSIONS_DIR.glob("*.parquet"))
+    return max(files, key=lambda p: p.stat().st_mtime) if files else None
 
 
 def main() -> int:

@@ -1,0 +1,6 @@
+edge,final_err_m,success,z_min_m,z_max_m
+rapid_fire,0.004586852116776407,True,,
+mid_move_preemption,0.008410100534762186,True,,
+stop_resume,0.00466109194639679,True,,
+down_at_low_alt,0.00033935268806994934,True,0.50033935268807,
+up_at_high_alt,0.00033935268807105956,True,,1.499660647311929

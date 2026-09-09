@@ -1,0 +1,3 @@
+model,regime,deriv_r2,step_nrmse,n_active_terms
+sindy,full_envelope,0.9945735350588508,0.07855063479842121,44
+dmdc,near_hover,0.9925505331541667,0.08248747107227157,60

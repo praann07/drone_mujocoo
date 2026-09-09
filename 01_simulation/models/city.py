@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 # --- Flight-envelope safety -------------------------------------------------
 # Voice waypoints stay inside +-1.5 m lateral / ~+-0.5 m vertical (see
 # commands.py). The obstacle tower's face sits at OBSTACLE_FACE_X, which a
@@ -124,3 +126,61 @@ def buildings() -> tuple[CityObject, ...]:
 
 def obstacle() -> CityObject:
     return CITY_OBJECTS[0]
+
+
+# --- Chained-command safety clamp -------------------------------------------
+# `test_city_buildings_clear_flight_corridor` only ever proved a SINGLE
+# voice command from the origin can't land inside a building. It says
+# nothing about two commands in the SAME direction (e.g. "go straight"
+# said twice) compounding past one - which is exactly what happened live:
+# forward + forward pushed the target to x=3.0 m, dead center of the
+# obstacle tower (face at OBSTACLE_FACE_X=2.3 m). Buildings are
+# non-collidable (contype=0/conaffinity=0, see module docstring), so
+# nothing in MuJoCo's physics would have stopped that target from being
+# accepted - the drone just flew its cascade straight at/through the
+# tower's visual mesh. This margin is the general fix: clamp at dispatch
+# time (flight.py::FlightController.dispatch), not by making the scene
+# collidable (which would be a physics/controller change, out of scope).
+SAFETY_MARGIN_M = 0.3
+
+
+def clamp_target_to_safe_zone(p0, p1, margin: float = SAFETY_MARGIN_M):
+    """Given a commanded flight from `p0` to `p1`, return the furthest
+    point along that straight segment that stays `margin` meters clear of
+    every building/tower - or `p1` unchanged if the direct path never
+    enters one. General ray-vs-AABB clipping (slab method), not just an
+    axis-aligned special case, so it stays correct even if a future
+    command ever moves on more than one axis at once."""
+    p0 = np.asarray(p0, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+    d = p1 - p0
+    seg_len = float(np.linalg.norm(d))
+    if seg_len < 1e-9:
+        return p1.copy()  # hover/stop: no travel, nothing to clamp
+
+    best_t = 1.0  # fraction of the p0->p1 segment that's actually clear
+    for b in buildings():
+        lo = np.array([b.x - b.half_x, b.y - b.half_y, 0.0])
+        hi = np.array([b.x + b.half_x, b.y + b.half_y, b.height])
+        t_enter, t_exit, hit = 0.0, 1.0, True
+        for axis in range(3):
+            if abs(d[axis]) < 1e-9:
+                if p0[axis] < lo[axis] or p0[axis] > hi[axis]:
+                    hit = False
+                    break
+                continue
+            t1 = (lo[axis] - p0[axis]) / d[axis]
+            t2 = (hi[axis] - p0[axis]) / d[axis]
+            t1, t2 = min(t1, t2), max(t1, t2)
+            t_enter, t_exit = max(t_enter, t1), min(t_exit, t2)
+            if t_enter > t_exit:
+                hit = False
+                break
+        if not hit or t_enter > 1.0 or t_exit < 0.0:
+            continue  # segment never reaches this building's box
+        safe_t = max(0.0, t_enter - margin / seg_len)
+        best_t = min(best_t, safe_t)
+
+    if best_t >= 1.0 - 1e-9:
+        return p1.copy()
+    return p0 + best_t * d

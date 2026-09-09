@@ -33,7 +33,7 @@ import mujoco
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-for _p in ("01_simulation", "04_control",
+for _p in ("01_simulation", "01_simulation/models", "04_control",
            "02_identification", "03_validation"):
     sys.path.insert(0, str(ROOT / _p))
 
@@ -43,6 +43,7 @@ from position_controller import PositionController  # noqa: E402
 from trajectory import PointToPointTrajectory  # noqa: E402
 from commands import target_offset  # noqa: E402
 from sindy_fit import SINDyModel  # noqa: E402
+from city import clamp_target_to_safe_zone  # noqa: E402
 
 DT = 0.002
 IDENTITY_Q = np.array([1.0, 0.0, 0.0, 0.0])
@@ -116,7 +117,20 @@ class FlightController:
         latency in ms (and 0.0 if not measured)."""
         t0 = time.perf_counter()
         p0 = self.position()
-        p1 = p0 + target_offset(command)
+        p1_raw = p0 + target_offset(command)
+        # Buildings are non-collidable (visual-only, see city.py) - nothing
+        # in MuJoCo's physics stops a target from being set inside one.
+        # This clamp is the safety net for CHAINED same-direction commands
+        # (e.g. "forward" said twice) compounding past a building; a single
+        # command from a safe starting point was already proven clear by
+        # test_city_buildings_clear_flight_corridor, but that check said
+        # nothing about repeats - confirmed live: two "forward"s landed a
+        # target at x=3.0m, dead center of the obstacle tower.
+        p1 = clamp_target_to_safe_zone(p0, p1_raw)
+        if not np.allclose(p1, p1_raw, atol=1e-6):
+            print(f"[safety] {command!r} clamped - target would enter a "
+                  f"building; stopping short at {p1.round(3).tolist()} "
+                  f"instead of {p1_raw.round(3).tolist()}", flush=True)
         self.traj = PointToPointTrajectory(p0, p1)
         self.t_traj = 0.0
         self.command = command

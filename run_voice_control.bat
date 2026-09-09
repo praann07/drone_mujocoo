@@ -14,8 +14,23 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-echo Starting Live 3D Simulation + Mission-Control Telemetry HUD...
-echo Speak commands: "forward", "back", "left", "right", "hover", "stop"
+echo Checking voice model...
+if not exist "vosk-model-small-en-us-0.15" (
+    echo [ERROR] vosk-model-small-en-us-0.15 folder not found in this project.
+    echo Download it from https://alphacephei.com/vosk/models and unzip it
+    echo into this same folder, or run 'run_text_control.bat' instead ^(no
+    echo mic needed - type commands into the window^).
+    pause
+    exit /b 1
+)
+
+echo Starting Live 3D Simulation + Telemetry Dashboard...
+echo.
+echo Speak: forward / back / left / right / up / down / hover / stop
+echo   - Every word you say shows up on screen, recognized or not.
+echo   - Click TOGGLE CAMERA in the dashboard window for bird's-eye view.
+echo   - Click any command button in the dashboard as a backup if a word
+echo     doesn't get recognized.
 echo.
 
 .venv\Scripts\python.exe 05_voice_interface\demo.py --source vosk --model-dir .\vosk-model-small-en-us-0.15

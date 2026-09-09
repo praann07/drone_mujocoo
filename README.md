@@ -128,6 +128,26 @@ Cascaded tracking performance driving the full 6-DOF MuJoCo plant under SINDy-de
 
 ---
 
+## Maneuver Gauntlet — 67/67 PASS (100%)
+
+Beyond the 24-isolated + 5-chained Stage E gate above, a dedicated stress test (`run_gauntlet.py`) exercises **every command, every chain, and the edge cases a strict reviewer would ask about first**:
+
+| Section | Coverage | Result |
+|---|---|:---:|
+| Single moves | All 8 commands × 3 runs from clean hover | ✅ 24/24 |
+| Chained sequences | Square, stairs, full-mix × 2 runs, no resets between legs | ✅ 38/38 legs |
+| Edge cases | Rapid-fire re-dispatch, mid-move preemption, stop-then-resume, altitude limits (never below floor, never runaway) | ✅ 5/5 |
+
+Full numbers, per-maneuver plots (CSV + PNG for all 67), and a combined chase+bird's-eye GIF of the entire gauntlet are in **[`results/RESULTS.md`](results/RESULTS.md)** — that file is the single consolidated deliverable (plots, videos, logs, raw data) if you only look at one thing. Reproduce it with:
+```powershell
+.\.venv\Scripts\python.exe run_gauntlet.py
+.\.venv\Scripts\python.exe save_plots.py
+```
+
+**Bird's-eye camera**: the interactive demo (`demo.py`) and every offscreen render now show chase view *and* a top-down Google-Maps-style view together. In the live 3D window, press **B** to toggle the MuJoCo viewer itself between chase and bird's-eye.
+
+---
+
 ## Latency Characterization & Verification
 
 In compliance with strict scientific rigor, latency is characterized with full transparency:
@@ -199,6 +219,8 @@ Run the interactive MuJoCo 3D viewer accompanied by the real-time mission-contro
 
 ### 4. Quick Launch (1-Click Windows Batch Scripts)
 Double-click any of the launcher batch scripts directly from File Explorer:
+* **`RUN_EVERYTHING.bat`** — For presenting, step 1: one click, zero typing. Opens the live 3D demo, a commands guide (stays open the whole time), and the full test suite.
+* **`SHOW_RESULTS.bat`** — Step 2: after you've flown, one click opens fresh 2D + 3D graphs of *that* flight (the demo logs every command automatically — this is never an old test run).
 * **`run_drone.bat`** or **`START_DEMO.bat`** — Interactive launcher menu (flight modes, 24+5 trials, 31-test pytest suite).
 * **`run_voice_control.bat`** — Launches live microphone voice control with automatic model loading.
 * **`run_text_control.bat`** — Launches interactive typed navigation (instant, no microphone needed).
@@ -237,7 +259,7 @@ done_v2.0/
 ├── 03_validation/                    # Rollout verification, ablations & model selection
 ├── 04_control/                       # Quaternion controller & Newtonian trajectory planner
 ├── 05_voice_interface/           # Voice input, real-time HUD dashboard, live flight & offline plots
-├── tests/                                 # Full Pytest test suite (28 tests across all stages)
+├── tests/                                 # Full Pytest test suite (31 tests across all stages)
 ├── CLAUDE.md                              # Single source of truth for stage-gate status
 └── requirements.txt                       # Project dependencies
 ```

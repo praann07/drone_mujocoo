@@ -93,7 +93,11 @@ class TextSource(_BaseSource):
                     return
                 if not line:
                     return
-                self._emit(line, 1.0, {"vad": 0.0, "asr": 0.0})
+                # strip the trailing newline readline() always includes -
+                # now that every heard transcript is shown on screen
+                # (demo.py's heard-log fix), a literal "\n" in the display
+                # text is a real cosmetic bug, not harmless.
+                self._emit(line.strip(), 1.0, {"vad": 0.0, "asr": 0.0})
 
 
 class VoskSource(_BaseSource):
@@ -244,6 +248,23 @@ class VoskSource(_BaseSource):
             "  3. Select an active microphone under Windows 'Settings > System > Sound > Input', OR\n"
             "  4. Use '--source text' to control the drone immediately via keyboard typing."
         ) from None
+
+    def get_partial(self) -> str:
+        """Return the in-progress (not-yet-finalized) transcript Vosk is
+        currently hearing, or "" if silent/between utterances. Lets the
+        HUD show words appearing as they're spoken, not only after an
+        utterance ends. Guarded by the same lock `_audio_callback` uses
+        to write `self._partial`, since this is read from the main
+        thread while the audio thread writes it."""
+        import json
+        with self._lock:
+            raw = self._partial
+        if not raw:
+            return ""
+        try:
+            return json.loads(raw).get("partial", "").strip()
+        except Exception:
+            return ""
 
     def stop(self):
         self._running = False

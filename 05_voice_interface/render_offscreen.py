@@ -26,7 +26,7 @@ from run_preemption import PREEMPT_AT_S  # noqa: E402
 WIDTH, HEIGHT = 640, 480
 FPS = 25
 STEPS_PER_FRAME = max(1, int(round(1.0 / (FPS * DT))))
-COMMAND_SEQUENCE = ["forward", "left", "back", "right", "hover"]
+COMMAND_SEQUENCE = ["forward", "left", "back", "right", "up", "down", "hover"]
 
 
 def _font():
@@ -36,9 +36,19 @@ def _font():
         return None
 
 
-def _overlay(rgb: np.ndarray, fc: FlightController, command: str,
-             frame_idx: int) -> Image.Image:
-    img = Image.fromarray(rgb).convert("RGB")
+def _overlay_split(chase_rgb: np.ndarray, bird_rgb: np.ndarray, fc: FlightController,
+                    command: str) -> Image.Image:
+    """Chase view (left) + bird's-eye/top-down view (right) side by side in
+    one frame, so the GIF proves navigation both up close AND from a
+    Google-Maps-style overhead angle showing the drone moving between
+    buildings - not just claimed, visible in the same image."""
+    chase_img = Image.fromarray(chase_rgb).convert("RGB")
+    bird_img = Image.fromarray(bird_rgb).convert("RGB")
+    w, h = chase_img.size
+    combined = Image.new("RGB", (w * 2, h))
+    combined.paste(chase_img, (0, 0))
+    combined.paste(bird_img, (w, 0))
+
     p = fc.position()
     q = fc.attitude()
     att_err = fc.attitude_error_deg(IDENTITY_Q)
@@ -50,13 +60,14 @@ def _overlay(rgb: np.ndarray, fc: FlightController, command: str,
         f"att_err={att_err:6.2f} deg",
         f"tower_dist x={dist_tower:+6.2f} m",
     ]
-    draw = ImageDraw.Draw(img)
+    draw = ImageDraw.Draw(combined)
     font = _font()
     y = 8
     for line in txt:
         draw.text((8, y), line, fill=(0, 255, 0), font=font)
         y += 16
-    return img
+    draw.text((w + 8, 8), "CHASE (left) / BIRD'S-EYE (right)", fill=(0, 255, 0), font=font)
+    return combined
 
 
 def render(out_dir: Path | None = None, commands=None,
@@ -76,8 +87,10 @@ def render(out_dir: Path | None = None, commands=None,
         step += 1
         if step % STEPS_PER_FRAME == 0:
             renderer.update_scene(fc.data, camera="chase")
-            rgb = renderer.render()
-            frames.append(_overlay(rgb, fc, f"{disp_cmd}{preempted_flag}", step))
+            chase_rgb = renderer.render()
+            renderer.update_scene(fc.data, camera="birdseye")
+            bird_rgb = renderer.render()
+            frames.append(_overlay_split(chase_rgb, bird_rgb, fc, f"{disp_cmd}{preempted_flag}"))
 
     if not preempt:
         seq = commands or COMMAND_SEQUENCE

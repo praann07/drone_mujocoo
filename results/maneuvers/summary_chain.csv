@@ -1,0 +1,7 @@
+section,maneuver,run,final_pos_err_m,all_legs_pass,n_legs,n_pass
+chain,square,1,9.223787939707309e-06,True,5,5
+chain,square,2,9.223787939707309e-06,True,5,5
+chain,stairs,1,9.227614960471883e-06,True,7,7
+chain,stairs,2,9.227614960471883e-06,True,7,7
+chain,full_mix,1,9.245915750988268e-06,True,7,7
+chain,full_mix,2,9.245915750988268e-06,True,7,7
