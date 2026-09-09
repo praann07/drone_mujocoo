@@ -10,11 +10,11 @@
 | Stage | Command | Result |
 |---|---|:---:|
 | **Tests** | `pytest tests/` | ✅ 34/34 PASS |
-| **Stage A** — Excitation | `run_stage_a.py` | ✅ PASS |
-| **Stage B** — Identification | `run_stage_b.py` | ✅ PASS |
-| **Stage C** — Validation | `run_stage_c.py` | ✅ PASS |
-| **Stage D Inner** — Attitude loop | `run_stage_d_inner.py` | ✅ PASS |
-| **Stage D Cascade** — Full cascade | `run_stage_d_cascade.py` | ✅ PASS |
+| **Stage A** — Excitation | `run_excitation.py` | ✅ PASS |
+| **Stage B** — Identification | `run_identification.py` | ✅ PASS |
+| **Stage C** — Validation | `run_validation.py` | ✅ PASS |
+| **Stage D Inner** — Attitude loop | `run_inner_loop.py` | ✅ PASS |
+| **Stage D Cascade** — Full cascade | `run_cascade.py` | ✅ PASS |
 | **Stage E Trials** — 24 isolated + 5 chained | `run_trials.py` | ✅ PASS |
 | **Stage E Preemption** — Mid-flight override | `run_preemption.py` | ✅ PASS |
 | **Render Nav GIF** — Offscreen 3D city tour | `render_offscreen.py` | ✅ PASS |
@@ -91,7 +91,7 @@
 ## Visual Evidence
 
 ### 3D City Navigation GIF (Chase + Bird's-Eye)
-`videos/stage_e_navigation.gif` — forward→left→back→right→up→down→hover over 3D city
+`videos/navigation.gif` — forward→left→back→right→up→down→hover over 3D city
 
 ### Full Gauntlet GIF (All 8 Commands + Square Chain)
 `videos/gauntlet_full.gif` — 780 frames, chase view left / bird's-eye right, every direction visible
@@ -100,7 +100,7 @@
 `videos/robustness_preemption.gif` — forward overridden by back mid-flight, 1.911 m clearance to tower
 
 ### 2D Telemetry
-`plots_2d/stage_e_telemetry_2d.png` — position error, attitude error, latency per trial  
+`plots_2d/telemetry_2d.png` — position error, attitude error, latency per trial  
 `plots_2d/cascade_forward.png` — Stage D cascade step response  
 `plots_2d/rollout_sindy_long.png` — 11s open-loop SINDy rollout  
 `plots_2d/robustness_preemption.png` — x(t) vs counterfactual + reversal window
@@ -119,6 +119,10 @@ results/
 ├── plots_3d/          3 PNG files (3D trajectory + phase portrait)
 ├── videos/            3 GIF files (navigation, preemption, gauntlet)
 ├── maneuvers/         67 CSV + 67 PNG per-maneuver + 3 summary CSVs + gauntlet_full.gif
-├── data/              sindy_fitted_model.npz + 5 CSV/parquet logs
-└── logs/              11 log files (pytest, stages A-E, gauntlet, plots)
+├── data/              sindy_fitted_model.npz + 5 CSV/parquet logs (README.md explains each)
+└── logs/              raw console output per pipeline stage (README.md explains each)
 ```
+
+**`data/` and `logs/` are raw backing files, not meant to be read directly —
+each has its own `README.md` explaining what's in it, if you need to check.
+This file (`RESULTS.md`) is the actual human-readable summary.**

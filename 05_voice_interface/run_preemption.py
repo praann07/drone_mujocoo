@@ -20,8 +20,8 @@ hit that tower" works identically.
 
     .venv\\Scripts\\python.exe 05_voice_interface\\run_preemption.py
 
-Writes data/processed/stage_e_voice_sessions/stage_e_preemption_*.parquet
-(per-step telemetry) and data/processed/stage_e_demo/robustness_preemption.png.
+Writes data/processed/voice_sessions/preemption_*.parquet
+(per-step telemetry) and data/processed/voice_demo/robustness_preemption.png.
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def _utc():
 def run_preemption(preempt_at_s: float = PREEMPT_AT_S,
                    flight_s: float = FLIGHT_DURATION_S,
                    out_dir: Path | None = None) -> dict:
-    out_dir = out_dir or (ROOT / "data" / "processed" / "stage_e_voice_sessions")
+    out_dir = out_dir or (ROOT / "data" / "processed" / "voice_sessions")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     fc = FlightController()
@@ -89,7 +89,7 @@ def run_preemption(preempt_at_s: float = PREEMPT_AT_S,
 
     telemetry = pd.DataFrame(rows)
     stamp = _utc()
-    log_path = out_dir / f"stage_e_preemption_{stamp}.parquet"
+    log_path = out_dir / f"preemption_{stamp}.parquet"
     telemetry.to_parquet(log_path, index=False)
 
     peak_x = float(telemetry["px"].max())
@@ -149,7 +149,7 @@ def plot(s: dict, out_dir: Path | None = None) -> Path:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    out_dir = out_dir or (ROOT / "data" / "processed" / "stage_e_demo")
+    out_dir = out_dir or (ROOT / "data" / "processed" / "voice_demo")
     out_dir.mkdir(parents=True, exist_ok=True)
     telemetry = s["telemetry"]
     back_target = s["back_target"]

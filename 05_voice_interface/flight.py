@@ -10,7 +10,7 @@ satisfying the "never wire Stage E directly to the ground-truth simulator,
 bypassing the Stage D cascade" rule.
 
 The controller LOADS the frozen model artifact written by
-03_validation.run_stage_c.freeze_selected_model() rather than
+03_validation.run_validation.freeze_selected_model() rather than
 re-fitting SINDy from raw excitation parquet files on every launch. This
 matters: the whole point of the staged-gate discipline in docs/CLAUDE.md
 is that a specific, validated model is what gets to drive a controller or
@@ -59,7 +59,7 @@ def load_frozen_sindy() -> tuple[SINDyModel, np.ndarray]:
     if not FROZEN_MODEL_PATH.exists():
         raise RuntimeError(
             f"Frozen model artifact not found at {FROZEN_MODEL_PATH}. "
-            "Run `03_validation/run_stage_c.py` first — it fits, "
+            "Run `03_validation/run_validation.py` first — it fits, "
             "validates against the Stage B/C gates, and freezes the "
             "selected model for Stage E to load. Stage E refuses to "
             "silently refit an unvalidated model at runtime."

@@ -4,7 +4,7 @@ SINDy-identified model or ground-truth MuJoCo physics.
 Attitude is propagated with EXACT quaternion kinematics
 (dq/dt = 0.5 * q (x) [0, omega]), not SINDy's approximate local-coordinate
 theta_dot - that approximation was a Stage B/C identification-coordinate
-convenience, and 02_identification.run_stage_b confirmed (fitted
+convenience, and 02_identification.run_identification confirmed (fitted
 model coefficients) that the identified omega_dot has ZERO dependence on
 theta, so SINDy is used only for what it actually models: omega_dot(omega,
 u). This sidesteps the periodic reference-attitude reset machinery

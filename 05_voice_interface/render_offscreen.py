@@ -73,7 +73,7 @@ def _overlay_split(chase_rgb: np.ndarray, bird_rgb: np.ndarray, fc: FlightContro
 def render(out_dir: Path | None = None, commands=None,
            flight_s: float = 5.0, preempt: bool = False) -> Path:
     out_dir = out_dir or (Path(__file__).resolve().parent.parent / "data"
-                          / "processed" / "stage_e_demo")
+                          / "processed" / "voice_demo")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     fc = FlightController()
@@ -100,7 +100,7 @@ def render(out_dir: Path | None = None, commands=None,
             for _ in range(n_steps):
                 _emit(cmd, fc, "")
             print(f"  rendered command '{cmd}' -> pos {fc.position()}")
-        gif_path = out_dir / "stage_e_navigation.gif"
+        gif_path = out_dir / "navigation.gif"
     else:
         # Mid-flight preemption sequence: forward then back before the
         # waypoint, mirroring run_preemption.py (same PREEMPT_AT_S) so the

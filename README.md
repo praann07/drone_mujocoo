@@ -48,7 +48,7 @@ Attitude kinematics and dynamics are parameterized by state $\mathbf{x} = [\bold
 $$\dot{\boldsymbol{\theta}} \approx \boldsymbol{\omega}$$
 $$\mathbf{J}\dot{\boldsymbol{\omega}} = \boldsymbol{\tau}_{\text{ctrl}} - \boldsymbol{\omega} \times (\mathbf{J}\boldsymbol{\omega}) - c_{\text{rot}}\boldsymbol{\omega}$$
 
-Using Sequential Thresholded Least Squares (STLSQ, sparsity threshold $\lambda = 0.2$), SINDy identifies the governing equations from rich multi-axis PRBS and multisine excitation data. SINDy successfully isolates 44 active terms out of 156 candidates, accurately recovering the physical drag-to-inertia ratio, rotor control effectiveness, and gyroscopic cross-coupling within 2–6% of ground-truth physical values (verified in [`tests/test_stage_b_physics.py`](tests/test_stage_b_physics.py)).
+Using Sequential Thresholded Least Squares (STLSQ, sparsity threshold $\lambda = 0.2$), SINDy identifies the governing equations from rich multi-axis PRBS and multisine excitation data. SINDy successfully isolates 44 active terms out of 156 candidates, accurately recovering the physical drag-to-inertia ratio, rotor control effectiveness, and gyroscopic cross-coupling within 2–6% of ground-truth physical values (verified in [`tests/test_identification_physics.py`](tests/test_identification_physics.py)).
 
 ### 2. Analytical Gain Derivation (No Hand-Tuning)
 Controller gains are never chosen by guesswork. The function `gains_from_identified_model(A_sindy)` in [`04_control/controller.py`](04_control/controller.py) extracts the rotational drag-to-inertia coefficient $d = -A_{\text{SINDy}}[3, 3]$ from the identified hover-linearized Jacobian and solves the characteristic second-order pole-placement equation:
@@ -56,7 +56,7 @@ $$\omega_n = \frac{4.0}{\zeta \cdot T_s}, \qquad K_q = \frac{\omega_n^2}{2}, \qq
 for a critically damped response ($\zeta = 1.0$) and target settling time ($T_s = 0.8\text{ s}$). When the identification model updates, the control gains automatically adapt.
 
 ### 3. Frozen Model Artifact Discipline
-At runtime, Stage E does not silently refit models from raw data. Instead, [`03_validation/run_stage_c.py`](03_validation/run_stage_c.py) serializes the gate-validated model and hover Jacobian to `data/processed/sindy_fitted_model.npz`. The real-time flight controller ([`05_voice_interface/flight.py`](05_voice_interface/flight.py)) loads this frozen artifact directly via `np.load()`, guaranteeing deterministic, instant startup and ensuring that flight tests execute against the exact validated model.
+At runtime, Stage E does not silently refit models from raw data. Instead, [`03_validation/run_validation.py`](03_validation/run_validation.py) serializes the gate-validated model and hover Jacobian to `data/processed/sindy_fitted_model.npz`. The real-time flight controller ([`05_voice_interface/flight.py`](05_voice_interface/flight.py)) loads this frozen artifact directly via `np.load()`, guaranteeing deterministic, instant startup and ensuring that flight tests execute against the exact validated model.
 
 ---
 
@@ -72,7 +72,7 @@ Every quantitative result below is derived from reproducible scripts with strict
 | **Stage B** — Physics Sanity | Physical coefficient recovery vs. ground truth | Recovered within **2% to 6%** (drag, mixer effectiveness, gyro cross-term) | ✅ PASS |
 | **Stage C** — Rollout Stability | 11 s open-loop autonomous rollout | **SINDy: 0/7 diverged** (full envelope) \| DMDc: 0/16 (hover only) | ✅ PASS |
 | **Stage C** — Head-to-Head | Evaluated in DMDc's *own* near-hover regime | SINDy **0.0789** vs DMDc **0.0825** NRMSE (SINDy wins even near hover) | ✅ PASS |
-| **Stage C** — Model Selection | Parsimony, global validity, closed-loop tracking | **SINDy Selected** (see [`model_selection.md`](data/processed/stage_c_plots/model_selection.md)) | ✅ PASS |
+| **Stage C** — Model Selection | Parsimony, global validity, closed-loop tracking | **SINDy Selected** (see [`model_selection.md`](data/processed/validation_plots/model_selection.md)) | ✅ PASS |
 | **Stage D** — Inner Loop | Step settling time (SINDy model vs. MuJoCo plant) | **0.56 s – 0.86 s** (agrees within **~0.3%** across all axes) | ✅ PASS |
 | **Stage D** — Full Cascade | Multi-waypoint 3D tracking & steady-state error | Settling time **~1.88 s**, Final Error = **0.0044 m** | ✅ PASS |
 | **Stage E** — Isolated Trials | 24 scripted voice trials (reset to hover before each) | **24/24 Success (100.0%)** at 0.15 m tolerance | ✅ PASS |
@@ -89,42 +89,42 @@ This is a genuinely 3D project throughout — real MuJoCo rigid-body physics ren
 
 **Live 3D physics simulation** (offscreen-rendered, real MuJoCo rendering — the same physics driving the interactive demo, not a pre-baked animation), flown over a 3D printed-map city (roads, block buildings, a forward obstacle tower, parks) drawn into `scene.xml`, with the drone commanding via the cascade:
 
-![Live 3D Navigation Demo](data/processed/stage_e_demo/stage_e_navigation.gif)
+![Live 3D Navigation Demo](data/processed/voice_demo/navigation.gif)
 
 **Mid-flight command preemption** — the drone is told "back" at t≈0.7 s while still en route forward, so it reverses immediately instead of continuing toward the obstacle tower ahead (peak excursion 0.39 m vs the 2.3 m tower face):
 
-![Command Preemption](data/processed/stage_e_demo/robustness_preemption.gif) ![Preemption Plot](data/processed/stage_e_demo/robustness_preemption.png)
+![Command Preemption](data/processed/voice_demo/robustness_preemption.gif) ![Preemption Plot](data/processed/voice_demo/robustness_preemption.png)
 
 **3D flight trajectory over the same city model** — isometric and top-down views of real logged flights (multiple sessions overlaid), drawn from the identical city spec (`01_simulation/models/city.py`) that `scene.xml` renders, independent of and never re-rendering the MuJoCo scene above:
 
-![3D Flight Trajectory](data/processed/stage_e_demo/flight_3d_trajectory.png)
+![3D Flight Trajectory](data/processed/voice_demo/flight_3d_trajectory.png)
 
 **3D angular-velocity phase portrait** — ground truth vs. SINDy-predicted trajectory through the identified model's own state space $(\omega_x, \omega_y, \omega_z)$, for a combined-axis held-out rollout. This is tied directly to identification quality, not flight path:
 
-![3D Rollout Phase Portrait](data/processed/stage_c_plots/rollout_sindy_long_3d_phase.png)
+![3D Rollout Phase Portrait](data/processed/validation_plots/rollout_sindy_long_3d_phase.png)
 
 ### System Identification & Validation Analysis
 
 **What feeds the identification** — rotor thrust inputs, the angular-velocity response they produce, and the derivative targets SINDy/DMDc are actually fit to predict, all from one representative excitation trial:
 
-![Input vs Output Data Definition](data/processed/stage_c_plots/input_output_data_definition.png)
+![Input vs Output Data Definition](data/processed/validation_plots/input_output_data_definition.png)
 
 | SINDy vs. DMDc Head-to-Head (Near Hover) | Discrete & Continuous Eigenvalue Spectra |
 |:---:|:---:|
-| ![Head to Head](data/processed/stage_c_plots/head_to_head_near_hover.png) | ![Eigenvalues](data/processed/stage_c_plots/eigenvalue_spectrum.png) |
+| ![Head to Head](data/processed/validation_plots/head_to_head_near_hover.png) | ![Eigenvalues](data/processed/validation_plots/eigenvalue_spectrum.png) |
 
 | STLSQ Sparsity Ablation ($\lambda$ sweep) | Additive Gaussian Noise Sensitivity |
 |:---:|:---:|
-| ![Sparsity Ablation](data/processed/stage_c_plots/sparsity_ablation.png) | ![Noise Ablation](data/processed/stage_c_plots/noise_ablation.png) |
+| ![Sparsity Ablation](data/processed/validation_plots/sparsity_ablation.png) | ![Noise Ablation](data/processed/validation_plots/noise_ablation.png) |
 
 **Open-loop rollout tracking** (theta and omega, ground truth vs. predicted, plus combined-state error norm):
 
-![SINDy Long-Horizon Rollout](data/processed/stage_c_plots/rollout_sindy_long.png)
+![SINDy Long-Horizon Rollout](data/processed/validation_plots/rollout_sindy_long.png)
 
 ### Closed-Loop Cascade Response
 Cascaded tracking performance driving the full 6-DOF MuJoCo plant under SINDy-derived gains:
 
-![Cascade Forward Step Response](data/processed/stage_d_plots/cascade_forward.png)
+![Cascade Forward Step Response](data/processed/control_plots/cascade_forward.png)
 
 ---
 
@@ -179,17 +179,17 @@ pip install -r requirements.txt
 Each stage validates gate criteria and generates empirical logs in `data/processed/`:
 ```powershell
 # Stage A: Generate PRBS/multisine excitation dataset & gate verification plots
-.\.venv\Scripts\python.exe 01_simulation\run_stage_a.py
+.\.venv\Scripts\python.exe 01_simulation\run_excitation.py
 
 # Stage B: Fit SINDy & DMDc models, evaluate held-out one-step prediction errors
-.\.venv\Scripts\python.exe 02_identification\run_stage_b.py
+.\.venv\Scripts\python.exe 02_identification\run_identification.py
 
 # Stage C: Run 11s open-loop rollouts, ablations, model selection & freeze artifact
-.\.venv\Scripts\python.exe 03_validation\run_stage_c.py
+.\.venv\Scripts\python.exe 03_validation\run_validation.py
 
 # Stage D: Validate inner attitude loop & outer cascaded trajectory tracking
-.\.venv\Scripts\python.exe 04_control\run_stage_d_inner.py
-.\.venv\Scripts\python.exe 04_control\run_stage_d_cascade.py
+.\.venv\Scripts\python.exe 04_control\run_inner_loop.py
+.\.venv\Scripts\python.exe 04_control\run_cascade.py
 
 # Stage E: Execute isolated (24/24) and chained (5/5) voice navigation trials
 .\.venv\Scripts\python.exe 05_voice_interface\run_trials.py
@@ -203,9 +203,17 @@ Each stage validates gate criteria and generates empirical logs in `data/process
 # Stage E: Headless command-preemption trial + robustness plot + parquet log
 .\.venv\Scripts\python.exe 05_voice_interface\run_preemption.py
 
-# Full Verification: Run entire unit & regression test suite (31 passed)
+# Maneuver gauntlet: 67 scripted maneuvers, logs + per-maneuver plots + GIF
+.\.venv\Scripts\python.exe run_gauntlet.py
+
+# Collect every plot/CSV/GIF above into results/ (matching results/RESULTS.md)
+.\.venv\Scripts\python.exe save_plots.py
+
+# Full Verification: Run entire unit & regression test suite (43 passed)
 .\.venv\Scripts\python.exe -m pytest tests\
 ```
+
+**Or just double-click `REBUILD_RESULTS.bat`** — runs every command above in order, with each step's output saved to `results\logs\`. Takes several minutes (the gauntlet's 67 maneuvers are the slow part); this is a "regenerate all the evidence from scratch" utility, not something you run before every demo.
 
 ### 3. Interactive Live 3D Simulation & Telemetry HUD
 Run the interactive MuJoCo 3D viewer accompanied by the real-time mission-control HUD:
@@ -224,9 +232,10 @@ Double-click any of the launcher batch scripts directly from File Explorer:
 * **`run_drone.bat`** or **`START_DEMO.bat`** — Interactive launcher menu (flight modes, 24+5 trials, 31-test pytest suite).
 * **`run_voice_control.bat`** — Launches live microphone voice control with automatic model loading.
 * **`run_text_control.bat`** — Launches interactive typed navigation (instant, no microphone needed).
+* **`REBUILD_RESULTS.bat`** — Regenerates every plot/CSV/GIF in `results/` from scratch (the full Stage A-E pipeline + the 67-maneuver gauntlet). Takes several minutes; run this if you want to reproduce the whole evidence gallery, not just fly the demo.
 
 ### 5. Standalone Offline Analysis Plots
-Run directly any time after a flight (no server, just a matplotlib window reading the most recently logged parquet under `data/processed/stage_e_voice_sessions/`):
+Run directly any time after a flight (no server, just a matplotlib window reading the most recently logged parquet under `data/processed/voice_sessions/`):
 ```powershell
 .\.venv\Scripts\python.exe 05_voice_interface\plot_2d_telemetry.py
 .\.venv\Scripts\python.exe 05_voice_interface\plot_3d_trajectory.py
@@ -243,11 +252,11 @@ done_v2.0/
 │   ├── raw/                               # Raw excitation parquet datasets (Stage A)
 │   └── processed/                         # Held-out splits, plots, logs & frozen model
 │       ├── sindy_fitted_model.npz         # Frozen SINDy model artifact for Stage E
-│       ├── stage_a_plots/                 # Excitation response plots
-│       ├── stage_c_plots/                 # Rollout, ablation, eigenvalue & comparison plots
-│       ├── stage_d_plots/                 # Inner loop & cascade tracking step responses
-│       ├── stage_e_demo/                  # Animated 3D flight GIF (stage_e_navigation.gif)
-│       └── stage_e_voice_sessions/        # Parquet logs of isolated & chained trials
+│       ├── excitation_plots/              # Excitation response plots
+│       ├── validation_plots/              # Rollout, ablation, eigenvalue & comparison plots
+│       ├── control_plots/                 # Inner loop & cascade tracking step responses
+│       ├── voice_demo/                    # Animated 3D flight GIF (navigation.gif)
+│       └── voice_sessions/                # Parquet logs of isolated & chained trials
 ├── docs/                                  # Formal specifications & engineering documentation
 │   ├── PRD.md                             # Product Requirements Document
 │   ├── TDD.md                             # Technical Design Document

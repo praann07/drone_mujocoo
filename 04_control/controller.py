@@ -49,7 +49,7 @@ def gains_from_identified_model(A_sindy: np.ndarray) -> tuple[np.ndarray, np.nda
     """Per-axis (Kq, Komega) from the SINDy hover-linearization.
 
     A_sindy is the 6x6 Jacobian from
-    03_validation.run_stage_c.linearize_sindy_at_hover: its diagonal
+    03_validation.run_validation.linearize_sindy_at_hover: its diagonal
     blocks give, per axis i, omega_dot_i = ... - (c_rot/I_i)*omega_i, so
     the identified drag-over-inertia ratio is read directly off
     A_sindy[3+i, 3+i] - no separate access to the simulator's ground-truth

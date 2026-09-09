@@ -1,7 +1,7 @@
 """Standalone 2D telemetry plot, launched as a separate process from a
 Mission Control "Graph Launcher" button (docs/CLAUDE.md Stage E "Mission
 Control" entry). Loads the MOST RECENT logged trial/chained-flight parquet
-under data/processed/stage_e_voice_sessions/ and plots position error,
+under data/processed/voice_sessions/ and plots position error,
 attitude error, and latency breakdown as a static (not live-streamed)
 matplotlib figure.
 
@@ -11,8 +11,8 @@ browser page (dcc.Graph, updated every ~200ms from the in-process
 telemetry bus). This script's job is different - a bigger, standalone
 look at the numbers from the most recently COMPLETED run, reusing the
 same "read parquet -> matplotlib -> plt.show()" pattern already
-established in 03_validation/run_stage_c.py and
-04_control/run_stage_d_cascade.py, rather than inventing new
+established in 03_validation/run_validation.py and
+04_control/run_cascade.py, rather than inventing new
 cross-process live telemetry streaming for a secondary feature.
 
     .venv\\Scripts\\python.exe 05_voice_interface\\plot_2d_telemetry.py
@@ -26,19 +26,18 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
-SESSIONS_DIR = ROOT / "data" / "processed" / "stage_e_voice_sessions"
+SESSIONS_DIR = ROOT / "data" / "processed" / "voice_sessions"
 
 
 def _latest_parquet() -> Path | None:
     """Most RECENTLY WRITTEN log, by actual file modification time - not
     alphabetical filename sort. This directory holds three different
-    filename prefixes (stage_e_trials_, stage_e_chained_, stage_e_
-    preemption_), and 't' > 'c' > 'p' alphabetically regardless of the
-    timestamp each embeds, so a plain `sorted()` on the whole filename
-    would always return a stage_e_trials_* file (if one exists) even when
-    a stage_e_chained_* file from a live demo session was written seconds
-    ago - silently showing an old headless test run instead of what was
-    actually just flown."""
+    filename prefixes (trials_, chained_, preemption_), and 't' > 'c' > 'p'
+    alphabetically regardless of the timestamp each embeds, so a plain
+    `sorted()` on the whole filename would always return a trials_* file
+    (if one exists) even when a chained_* file from a live demo session
+    was written seconds ago - silently showing an old headless test run
+    instead of what was actually just flown."""
     files = list(SESSIONS_DIR.glob("*.parquet"))
     return max(files, key=lambda p: p.stat().st_mtime) if files else None
 

@@ -47,7 +47,7 @@ def _utc():
 def run_all(n_trials: int = N_TRIALS, seed: int = SEED,
             out_dir: Path | None = None) -> pd.DataFrame:
     out_dir = out_dir or (Path(__file__).resolve().parent.parent / "data" / "processed"
-                          / "stage_e_voice_sessions")
+                          / "voice_sessions")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rng = np.random.default_rng(seed)
@@ -113,7 +113,7 @@ def run_all(n_trials: int = N_TRIALS, seed: int = SEED,
 
     df = pd.DataFrame(rows)
     stamp = _utc()
-    path = out_dir / f"stage_e_trials_{stamp}.parquet"
+    path = out_dir / f"trials_{stamp}.parquet"
     df.to_parquet(path, index=False)
     return df, path
 
@@ -159,7 +159,7 @@ def run_chained(sequence=DEFAULT_CHAIN, hold_s: float = FLIGHT_DURATION_S,
     matches the qualitative demo, so the quantitative gate needs both.
     """
     out_dir = out_dir or (Path(__file__).resolve().parent.parent / "data" / "processed"
-                          / "stage_e_voice_sessions")
+                          / "voice_sessions")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     fc = FlightController()
@@ -207,7 +207,7 @@ def run_chained(sequence=DEFAULT_CHAIN, hold_s: float = FLIGHT_DURATION_S,
 
     df = pd.DataFrame(rows)
     stamp = _utc()
-    path = out_dir / f"stage_e_chained_{stamp}.parquet"
+    path = out_dir / f"chained_{stamp}.parquet"
     # position/quat columns are fixed-length arrays; store as separate
     # scalar columns so the parquet round-trips cleanly like run_all()'s log.
     flat = pd.DataFrame({

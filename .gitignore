@@ -11,7 +11,7 @@ vosk-model-*/
 # Large duplicate demo GIFs - regenerable via render_offscreen.py / save_plots.py
 # (see README reproduction commands). GitHub hard-rejects any file over 100MB,
 # and these are 95-116MB, duplicated across 2-3 folders - not worth committing.
-data/processed/stage_e_demo/stage_e_navigation.gif
-results/videos/stage_e_navigation.gif
+data/processed/voice_demo/navigation.gif
+results/videos/navigation.gif
 results/videos/gauntlet_full.gif
 results/maneuvers/gauntlet_full.gif

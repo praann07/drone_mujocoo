@@ -4,7 +4,7 @@ DMDc fits a linear operator  z_{k+1} = A z_k + B du_k  on the state
 z = (theta, omega). Attitude dynamics are genuinely nonlinear, so this is
 only meaningful near hover - hence the dedicated small-amplitude trial
 family (peak rotation < 20 deg, enforced by
-01_simulation/run_stage_a.py::assert_near_hover_bound). No
+01_simulation/run_excitation.py::assert_near_hover_bound). No
 EDMD/Koopman lift is used, by explicit decision in docs/TDD.md section 5.
 
 Control is expressed as the DIFFERENTIAL thrust du = u - hover rather than

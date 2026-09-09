@@ -5,7 +5,7 @@ This is an independent MATPLOTLIB analysis artifact, not a re-render or
 stream of MuJoCo's own 3D scene - the native MuJoCo passive viewer stays
 the ONLY live 3D view of the sim. This script instead plots the flight
 PATH from the most recently logged chained-flight parquet(s)
-(data/processed/stage_e_voice_sessions/stage_e_chained_*.parquet - a
+(data/processed/voice_sessions/chained_*.parquet - a
 genuine continuous multi-leg path, unlike the isolated-trial log where
 every trial resets to the origin), overlaying up to the last
 MAX_FLIGHTS_OVERLAID flights in different colors, together with the SAME
@@ -29,7 +29,7 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (registers 3d projection)
 ROOT = Path(__file__).resolve().parent.parent
 for _p in ("05_voice_interface", "01_simulation/models"):
     sys.path.insert(0, str(ROOT / _p))
-SESSIONS_DIR = ROOT / "data" / "processed" / "stage_e_voice_sessions"
+SESSIONS_DIR = ROOT / "data" / "processed" / "voice_sessions"
 from city import CITY_OBJECTS  # noqa: E402
 
 
@@ -46,10 +46,10 @@ def _recent_chained_parquets(n: int = MAX_FLIGHTS_OVERLAID) -> tuple[list[Path],
     and flagged as such (and only the single most recent one, since
     overlaying multiple discontinuous isolated-trial logs would compound
     the misleading-jump problem)."""
-    files = sorted(SESSIONS_DIR.glob("stage_e_chained_*.parquet"))
+    files = sorted(SESSIONS_DIR.glob("chained_*.parquet"))
     if files:
         return files[-n:], True
-    files = sorted(SESSIONS_DIR.glob("stage_e_trials_*.parquet"))
+    files = sorted(SESSIONS_DIR.glob("trials_*.parquet"))
     return ([files[-1]], False) if files else ([], False)
 
 
@@ -131,10 +131,10 @@ def main() -> int:
     fig.tight_layout()
 
     # Save an artifact copy in addition to showing it live, matching every
-    # other analysis plot in the project (stage_c_plots/, stage_d_plots/)
+    # other analysis plot in the project (validation_plots/, control_plots/)
     # - so there's always a reproducible file to embed/inspect even if no
     # one is watching the window when it's generated.
-    out_dir = ROOT / "data" / "processed" / "stage_e_demo"
+    out_dir = ROOT / "data" / "processed" / "voice_demo"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "flight_3d_trajectory.png"
     fig.savefig(out_path, dpi=120)

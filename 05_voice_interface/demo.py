@@ -46,7 +46,7 @@ from voice_input import TextSource, VoskSource  # noqa: E402
 from city import OBSTACLE_FACE_X  # noqa: E402
 from trajectory import POSITION_TOLERANCE_M  # noqa: E402
 
-SESSIONS_DIR = ROOT / "data" / "processed" / "stage_e_voice_sessions"
+SESSIONS_DIR = ROOT / "data" / "processed" / "voice_sessions"
 
 # Rolling window length for the strip charts, in seconds of flight time.
 HISTORY_S = 8.0
@@ -87,12 +87,12 @@ def format_heard_entry(transcript: str, cmd: str | None) -> str:
 
 class LiveFlightLogger:
     """Logs every dispatched command in an INTERACTIVE demo.py session to
-    the exact same `stage_e_chained_*.parquet` schema `run_trials.py`'s
+    the exact same `chained_*.parquet` schema `run_trials.py`'s
     `run_chained()` writes for headless runs - previously demo.py logged
     NOTHING, so `plot_2d_telemetry.py`/`plot_3d_trajectory.py` (which just
     read the newest matching parquet) could only ever show an old headless
     test run, never what a user actually just flew live. Matching the
-    filename prefix (`stage_e_chained_`) and column set means both plot
+    filename prefix (`chained_`) and column set means both plot
     scripts pick this up automatically with zero changes to them.
 
     One row per dispatched command ("leg"), closed out at the moment the
@@ -116,7 +116,7 @@ class LiveFlightLogger:
         self._pending: dict | None = None
         self._step_latencies_ms: list[float] = []
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        self.path = out_dir / f"stage_e_chained_{stamp}.parquet"
+        self.path = out_dir / f"chained_{stamp}.parquet"
 
     def on_dispatch(self, command: str, transcript: str, p_before: np.ndarray,
                      target: np.ndarray, classify_ms: float, trajectory_ms: float,

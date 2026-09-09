@@ -17,7 +17,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "01_simulation"))
 
-from run_stage_a import DURATION_S, seed_for_trial  # noqa: E402
+from run_excitation import DURATION_S, seed_for_trial  # noqa: E402
 from sim_driver import run_trial  # noqa: E402
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
@@ -29,7 +29,7 @@ def test_prbs_trial_regenerates_identically(axis, signal_type, trial_index):
     trial_id = f"A_{axis}_{signal_type}_{trial_index:03d}"
     stored_path = RAW_DIR / f"{trial_id}.parquet"
     if not stored_path.exists():
-        pytest.skip(f"{trial_id} not generated yet - run run_stage_a.py first")
+        pytest.skip(f"{trial_id} not generated yet - run run_excitation.py first")
 
     stored = pd.read_parquet(stored_path)
     regenerated = run_trial(axis, signal_type, trial_id, duration_s=DURATION_S,
